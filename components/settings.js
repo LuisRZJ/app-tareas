@@ -1,0 +1,128 @@
+// Panel de ajustes (SPA overlay)
+document.getElementById('settings-mount').innerHTML = `
+  <div class="settings-overlay" id="settings-overlay" aria-hidden="true">
+    <div class="settings-panel">
+
+      <div class="settings-header">
+        <span class="settings-title">Ajustes</span>
+        <button class="settings-close" id="settings-close" title="Cerrar">✕</button>
+      </div>
+
+      <div class="settings-body">
+
+        <!-- Sección: Categorías -->
+        <section class="settings-section">
+          <div class="settings-section-head">
+            <span class="settings-section-icon">◈</span>
+            <h2 class="settings-section-title">Categorías</h2>
+          </div>
+          <p class="settings-section-desc">Crea categorías personalizadas para organizar tus tareas.</p>
+
+          <!-- Lista de categorías predeterminadas -->
+          <div class="settings-cats-group">
+            <div class="settings-cats-group-label">Predeterminadas</div>
+            <div class="settings-cats-default" id="settings-cats-default"></div>
+          </div>
+
+          <!-- Lista de categorías personalizadas -->
+          <div class="settings-cats-group" id="settings-custom-group">
+            <div class="settings-cats-group-label">Personalizadas</div>
+            <div class="settings-cats-custom" id="settings-cats-custom"></div>
+          </div>
+
+          <!-- Formulario de nueva categoría -->
+          <div class="settings-cat-form" id="settings-cat-form">
+            <div class="settings-cat-form-title" id="settings-cat-form-title">Nueva categoría</div>
+
+            <!-- Nombre -->
+            <div class="settings-field">
+              <label class="settings-label">Nombre</label>
+              <input class="settings-input" id="cat-name" type="text" maxlength="20" placeholder="Ej. Viajes" autocomplete="off"/>
+            </div>
+
+            <!-- Icono (emoji) -->
+            <div class="settings-field">
+              <label class="settings-label">Icono</label>
+              <div class="settings-emoji-grid" id="settings-emoji-grid">
+                <!-- Relleno por JS -->
+              </div>
+              <input class="settings-input settings-emoji-custom" id="cat-icon" type="text" maxlength="4" placeholder="✈ o pega cualquier emoji"/>
+            </div>
+
+            <!-- Color -->
+            <div class="settings-field">
+              <label class="settings-label">Color</label>
+              <div class="settings-palette" id="settings-palette"></div>
+            </div>
+
+            <!-- Preview -->
+            <div class="settings-cat-preview" id="settings-cat-preview">
+              <span class="tag">
+                <span class="tag-dot" id="preview-dot" style="background:#1a3c6e"></span>
+                <span id="preview-label">👤 Vista previa</span>
+              </span>
+            </div>
+
+            <!-- Botones -->
+            <div class="settings-cat-actions">
+              <button class="settings-btn-secondary" id="cat-cancel">Cancelar</button>
+              <button class="settings-btn-primary" id="cat-save">Guardar categoría</button>
+            </div>
+          </div>
+
+          <button class="settings-add-cat-btn" id="settings-add-cat-btn">
+            <span>＋</span> Añadir categoría
+          </button>
+        </section>
+
+        <!-- Sección: Gestión de datos -->
+        <section class="settings-section">
+          <div class="settings-section-head">
+            <span class="settings-section-icon">⇅</span>
+            <h2 class="settings-section-title">Gestión de datos</h2>
+          </div>
+          <p class="settings-section-desc">Exporta una copia de seguridad o restaura tus datos desde un archivo JSON.</p>
+
+          <div class="settings-data-actions">
+            <button class="settings-data-btn" id="data-export">↓ Exportar datos</button>
+            <label class="settings-data-btn settings-data-import-label" for="data-import-file">
+              ↑ Importar datos
+              <input type="file" id="data-import-file" accept=".json" style="display:none">
+            </label>
+          </div>
+          <button class="settings-data-btn settings-data-btn-danger" id="data-clear">⊘ Borrar todos los datos</button>
+          <div class="settings-data-status" id="data-import-status"></div>
+
+          <!-- Confirmación de borrado -->
+          <div class="settings-data-confirm" id="data-clear-confirm" style="display:none">
+            <p class="settings-data-confirm-msg">¿Borrar todas las tareas, categorías y proyectos? Esta acción no se puede deshacer.</p>
+            <div class="settings-data-confirm-actions">
+              <button class="settings-data-confirm-cancel" id="data-clear-cancel">Cancelar</button>
+              <button class="settings-data-confirm-ok" id="data-clear-ok">Sí, borrar todo</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Sección: Sincronización en la nube -->
+        <section class="settings-section">
+          <div class="settings-section-head">
+            <span class="settings-section-icon">☁</span>
+            <h2 class="settings-section-title">Sincronización en la nube</h2>
+          </div>
+          <p class="settings-section-desc">Guarda y restaura tus datos automáticamente desde un repositorio privado de GitHub.</p>
+
+          <div class="cloud-status-row">
+            <span class="cloud-status-dot" id="cloud-status-dot"></span>
+            <span class="cloud-status" id="cloud-status">No sincronizado</span>
+          </div>
+
+          <div class="settings-data-actions">
+            <button class="settings-data-btn" id="cloud-upload">☁ Subir backup ahora</button>
+            <button class="settings-data-btn" id="cloud-download">↓ Restaurar desde la nube</button>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+`;

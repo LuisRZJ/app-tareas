@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Tareas — Daily Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+
+<!-- Pantalla de carga -->
+<div id="loader">
+  <div class="loader-inner">
+    <div class="loader-icon">✦</div>
+    <div class="loader-text">Daily Planner</div>
+    <div class="loader-bar"><div class="loader-bar-fill"></div></div>
+  </div>
+</div>
+
+<div class="app">
+
+  <!-- Header -->
+  <div id="header-mount"></div>
+
+  <!-- Add task form -->
+  <div id="form-mount"></div>
+
+  <!-- Filters -->
+  <div id="filters-mount"></div>
+
+  <!-- Task list -->
+  <div id="task-mount"></div>
+
+</div>
+
+<!-- Settings overlay (fuera del .app para z-index correcto) -->
+<div id="settings-mount"></div>
+
+<!-- Projects overlay -->
+<div id="projects-mount"></div>
+
+<!-- Stats overlay -->
+<div id="stats-mount"></div>
+
+<!-- Task detail modal -->
+<div class="detail-overlay" id="detail-overlay" aria-hidden="true">
+  <div class="detail-panel">
+    <div class="detail-header">
+      <button class="detail-back" id="detail-back" title="Volver">←</button>
+      <span class="detail-header-title">Detalle de tarea</span>
+      <button class="detail-close" id="detail-close" title="Cerrar">✕</button>
+    </div>
+    <div class="detail-body" id="detail-body"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Modal de sincronización con la nube (no se puede cerrar sin elegir una opción) -->
+<div class="sync-modal-overlay" id="sync-modal" style="display:none" aria-modal="true" role="dialog">
+  <div class="sync-modal">
+    <div class="sync-modal-icon">☁</div>
+    <h2 class="sync-modal-title">Backup encontrado en la nube</h2>
+    <p class="sync-modal-msg" id="sync-modal-msg"></p>
+    <div class="sync-modal-actions">
+      <button class="sync-modal-btn sync-modal-btn-secondary" id="sync-keep-local">Continuar con datos locales</button>
+      <button class="sync-modal-btn sync-modal-btn-primary" id="sync-restore">↓ Restaurar backup</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/utilidades/categorias.js"></script>
+<script src="js/utilidades/proyectos.js"></script>
+<script src="js/utilidades/helpers.js"></script>
+<script src="js/utilidades/markdown.js"></script>
+<script src="js/utilidades/db.js"></script>
+<script src="components/header.js"></script>
+<script src="components/form.js"></script>
+<script src="components/filters.js"></script>
+<script src="components/taskSection.js"></script>
+<script src="components/settings.js"></script>
+<script src="components/projects.js"></script>
+<script src="components/stats.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
