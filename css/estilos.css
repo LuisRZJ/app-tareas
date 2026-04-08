@@ -622,6 +622,9 @@ select:focus, select:hover { border-color: var(--gold); color: var(--text); }
 .form-overlay.above-detail {
   z-index: 320;
 }
+.form-overlay.above-projects {
+  z-index: 400;
+}
 .form-modal {
   width: 100%;
   max-width: 700px;
@@ -1175,7 +1178,55 @@ select:focus, select:hover { border-color: var(--gold); color: var(--text); }
   transform: translateY(100%);
   transition: transform 0.32s cubic-bezier(0.34,1.2,0.64,1);
   box-shadow: 0 -12px 48px rgba(0,0,0,0.35);
+  position: relative;
   overflow: hidden;
+}
+
+/* ── Drop overlay dentro del panel de ajustes ── */
+.settings-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(26,16,8,0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+  border: 2px dashed transparent;
+}
+.settings-drop-overlay.active {
+  opacity: 1;
+  pointer-events: all;
+  border-color: var(--gold);
+}
+.settings-drop-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 32px;
+}
+.settings-drop-icon {
+  font-size: 3rem;
+  line-height: 1;
+}
+.settings-drop-label {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--text);
+  font-weight: 500;
+  text-align: center;
+}
+.settings-drop-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text3);
+  text-align: center;
 }
 .settings-overlay.open .settings-panel {
   transform: translateY(0);
@@ -1378,6 +1429,57 @@ select:focus, select:hover { border-color: var(--gold); color: var(--text); }
 }
 .settings-data-status.ok  { color: var(--green); }
 .settings-data-status.err { color: var(--red); }
+
+/* ── Storage usage widget ── */
+.storage-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.storage-usage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.storage-usage-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text3);
+}
+.storage-usage-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.storage-usage-bar-track {
+  width: 100%;
+  height: 4px;
+  background: var(--bg3);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.storage-usage-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--gold);
+  width: 0%;
+  transition: width 0.5s ease;
+}
+.storage-usage-detail {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text3);
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 .settings-data-confirm {
   flex-direction: column;
   gap: 12px;
@@ -1782,6 +1884,121 @@ select:focus, select:hover { border-color: var(--gold); color: var(--text); }
 }
 .projects-overlay.open .projects-panel {
   transform: translateY(0);
+}
+
+/* ── Deslizado entre vistas de proyectos ── */
+.proj-views-wrap {
+  display: flex;
+  flex-direction: row;
+  width: 200%;
+  flex: 1;
+  overflow: hidden;
+  transition: transform 0.32s cubic-bezier(0.34,1.1,0.64,1);
+}
+.proj-views-wrap.show-detail {
+  transform: translateX(-50%);
+}
+.proj-view {
+  width: 50%;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Header vista detalle ── */
+.proj-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.proj-back-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.proj-back-btn:hover { background: var(--bg3); color: var(--text); }
+.proj-detail-title {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  color: var(--text);
+  font-weight: 400;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Cuerpo vista detalle ── */
+.proj-detail-body {
+  overflow-y: auto;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+}
+.proj-detail-desc {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text3);
+  margin: 0;
+  line-height: 1.5;
+}
+.proj-detail-desc:empty { display: none; }
+
+/* Botón acceso rápido nueva tarea */
+.proj-add-task-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--gold);
+  color: var(--bg);
+  border: none;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 11px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.12s;
+  align-self: flex-start;
+}
+.proj-add-task-btn:hover { opacity: 0.88; transform: scale(0.98); }
+.proj-add-task-btn span { font-size: 16px; line-height: 1; }
+
+/* Lista de tareas dentro del detalle */
+.proj-detail-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.proj-detail-tasks .task-item { margin: 0; }
+.proj-detail-empty {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text3);
+  padding: 8px 0;
+}
+.proj-detail-tasks-section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 6px 0 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
 }
 .projects-header {
   display: flex;

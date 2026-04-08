@@ -93,6 +93,18 @@ document.getElementById('settings-mount').innerHTML = `
           <button class="settings-data-btn settings-data-btn-danger" id="data-clear">⊘ Borrar todos los datos</button>
           <div class="settings-data-status" id="data-import-status"></div>
 
+          <!-- Uso de almacenamiento -->
+          <div class="storage-usage" id="storage-usage">
+            <div class="storage-usage-header">
+              <span class="storage-usage-label">Uso estimado de almacenamiento</span>
+              <span class="storage-usage-value" id="storage-usage-value">…</span>
+            </div>
+            <div class="storage-usage-bar-track">
+              <div class="storage-usage-bar-fill" id="storage-usage-fill"></div>
+            </div>
+            <div class="storage-usage-detail" id="storage-usage-detail"></div>
+          </div>
+
           <!-- Confirmación de borrado -->
           <div class="settings-data-confirm" id="data-clear-confirm" style="display:none">
             <p class="settings-data-confirm-msg">¿Borrar todas las tareas, categorías y proyectos? Esta acción no se puede deshacer.</p>
@@ -131,6 +143,15 @@ document.getElementById('settings-mount').innerHTML = `
           </div>
         </section>
 
+      </div>
+    </div>
+
+    <!-- Overlay drag-and-drop de respaldo -->
+    <div class="settings-drop-overlay" id="settings-drop-overlay">
+      <div class="settings-drop-box">
+        <div class="settings-drop-icon">📂</div>
+        <div class="settings-drop-label">Suelta el archivo para restaurar el respaldo</div>
+        <div class="settings-drop-hint">Archivo JSON de Daily Planner</div>
       </div>
     </div>
   </div>

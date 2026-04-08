@@ -9,6 +9,10 @@ let detailStack = [];
 let _backupSha = null;
 let _dataDirty = false;
 let _backupSecret = null;
+let _pendingCompleteParent = null;
+let _pendingCompleteSubs = null;
+let subtaskCompleteOverlay = null;
+let currentDetailProjId = null;
 
 function markDirty() { _dataDirty = true; }
 
@@ -125,6 +129,22 @@ function formatDateNice(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr + 'T12:00:00');
   return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function formatDueLabel(dateStr) {
+  if (!dateStr) return '';
+  const today = todayISO();
+  if (dateStr === today) return 'Hoy';
+  if (dateStr === addDays(today, 1)) return 'Mañana';
+  const dow = new Date().getDay(); // 0=Sun
+  const mondayOffset = dow === 0 ? -6 : 1 - dow;
+  const monday = addDays(today, mondayOffset);
+  const sunday = addDays(monday, 6);
+  if (dateStr >= monday && dateStr <= sunday) {
+    const d = new Date(dateStr + 'T12:00:00');
+    const name = d.toLocaleDateString('es-ES', { weekday: 'long' });
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+  return formatDateNice(dateStr);
 }
 function formatCreatedTime(t) {
   const d = new Date(t.id);
@@ -261,6 +281,9 @@ async function toggleDone(id) {
   if (!t.done && t.repeat && t.due) {
     // Eliminar la completada y crear la siguiente ocurrencia
     const original = { ...t };
+    // Guardar subtareas directas antes de eliminar el padre
+    const childTasks = tasks.filter(task => task.parentId === t.id);
+    const originalChildParentIds = childTasks.map(c => c.id); // solo para referencia
     tasks = tasks.filter(task => task.id !== t.id);
     await dbDelete(t.id);
     const next = addRepeat(t.due, t.dueTime || '', t.repeat);
@@ -280,20 +303,37 @@ async function toggleDone(id) {
     };
     tasks.unshift(newTask);
     await dbPut(newTask);
+    // Reasignar subtareas al nuevo padre
+    for (const child of childTasks) {
+      child.parentId = newTask.id;
+      await dbPut(child);
+    }
     markDirty();
     render();
     showToast(`🔁 Reprogramada para ${formatDateNice(next.due)}`, {
       undo: true,
       onUndo: async () => {
-        // Borrar la nueva ocurrencia y restaurar la original
+        // Borrar la nueva ocurrencia, restaurar el padre original y reasignar subtareas
         tasks = tasks.filter(task => task.id !== newTask.id);
         await dbDelete(newTask.id);
         tasks.unshift(original);
         await dbPut(original);
+        for (const child of childTasks) {
+          child.parentId = original.id;
+          await dbPut(child);
+        }
         render();
       }
     });
   } else {
+    // Si se va a completar (no reabrir) y tiene subtareas pendientes, preguntar qué hacer
+    if (!t.done) {
+      const pendingSubs = tasks.filter(task => task.parentId === t.id && !task.done);
+      if (pendingSubs.length > 0) {
+        showSubtaskCompleteDialog(t, pendingSubs);
+        return;
+      }
+    }
     // Completar tarea sin fecha: asignarle la fecha de hoy para que aparezca en Todo
     const hadDue = t.due;
     if (!t.done && !t.due) {
@@ -317,6 +357,58 @@ async function toggleDone(id) {
       showToast('↩ Tarea reabierta');
     }
   }
+}
+
+function showSubtaskCompleteDialog(parent, pendingSubs) {
+  _pendingCompleteParent = parent;
+  _pendingCompleteSubs = pendingSubs;
+  const total = pendingSubs.length;
+  const recurring = pendingSubs.filter(s => s.repeat).length;
+  let msg = `Esta tarea tiene ${total} subtarea${total > 1 ? 's' : ''} pendiente${total > 1 ? 's' : ''}`;
+  if (recurring > 0) msg += ` (${recurring} con recurrencia)`;
+  msg += '. ¿Qué deseas hacer con ellas?';
+  document.getElementById('subtask-complete-text').textContent = msg;
+  subtaskCompleteOverlay.classList.add('open');
+}
+
+async function executeCompleteParent(action) {
+  subtaskCompleteOverlay.classList.remove('open');
+  if (action === 'cancel') { _pendingCompleteParent = null; _pendingCompleteSubs = null; return; }
+  const t = _pendingCompleteParent;
+  const subs = _pendingCompleteSubs;
+  _pendingCompleteParent = null;
+  _pendingCompleteSubs = null;
+  const hadDue = t.due;
+  if (!t.due) t.due = todayISO();
+  t.done = true;
+  await dbPut(t);
+  if (action === 'free') {
+    // Desvincula las subtareas pendientes: pasan a ser tareas independientes
+    for (const s of subs) { s.parentId = null; await dbPut(s); }
+  } else if (action === 'all') {
+    // Marca todas las subtareas pendientes como completadas
+    for (const s of subs) {
+      if (!s.due) s.due = todayISO();
+      s.done = true;
+      await dbPut(s);
+    }
+  }
+  markDirty();
+  render();
+  showToast('🎉 ¡Tarea completada!', {
+    undo: true,
+    onUndo: async () => {
+      t.done = false;
+      if (!hadDue) t.due = '';
+      await dbPut(t);
+      if (action === 'free') {
+        for (const s of subs) { s.parentId = t.id; await dbPut(s); }
+      } else if (action === 'all') {
+        for (const s of subs) { s.done = false; await dbPut(s); }
+      }
+      render();
+    }
+  });
 }
 
 async function deleteTask(id) {
@@ -355,7 +447,7 @@ function getPriLabel(p) {
 function getDueBadge(t) {
   if (!t.due || t.done) return '';
   const status = getDueStatus(t.due, t.dueTime);
-  const label = formatDateNice(t.due);
+  const label = formatDueLabel(t.due);
   const timeLabel = t.dueTime ? ` · ${t.dueTime}` : '';
   return `<span class="due-badge due-${status}" title="Vencimiento">📅 ${label}${timeLabel}</span>`;
 }
@@ -554,6 +646,8 @@ function render() {
   } else {
     list.innerHTML = visible.map(t => renderTaskItem(t)).join('');
   }
+  // Refresh project detail if open
+  if (currentDetailProjId) renderProjectDetailTasks();
 }
 
 function renderTaskItem(t) {
@@ -907,7 +1001,7 @@ function openForm() {
   setTimeout(() => document.getElementById('new-task').focus(), 200);
 }
 function closeForm() {
-  formOverlay.classList.remove('open', 'above-detail');
+  formOverlay.classList.remove('open', 'above-detail', 'above-projects');
   editingId = null;
   subtaskParentId = null;
   document.getElementById('new-task').value = '';
@@ -999,6 +1093,52 @@ async function openSettings() {
   settingsOverlay.classList.add('open');
   settingsOverlay.setAttribute('aria-hidden', 'false');
   await renderSettingsCats();
+  renderStorageUsage();
+}
+
+function renderStorageUsage() {
+  const valueEl  = document.getElementById('storage-usage-value');
+  const fillEl   = document.getElementById('storage-usage-fill');
+  const detailEl = document.getElementById('storage-usage-detail');
+  if (!valueEl) return;
+
+  const fmt = bytes => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  };
+
+  // Estimate: serialize each store to JSON
+  const tasksBytes = new TextEncoder().encode(JSON.stringify(tasks)).length;
+  const catsBytes  = new TextEncoder().encode(JSON.stringify(
+    Object.entries(CATS).filter(([k]) => !(['trabajo','personal','salud','otro'].includes(k)))
+  )).length;
+  const projBytes  = new TextEncoder().encode(JSON.stringify(PROJECTS)).length;
+  const total = tasksBytes + catsBytes + projBytes;
+
+  // IndexedDB quota hint (if available)
+  const QUOTA_ESTIMATE = 5 * 1024 * 1024; // 5 MB conservative reference
+  const pct = Math.min(Math.round(total / QUOTA_ESTIMATE * 100), 100);
+
+  valueEl.textContent = fmt(total);
+  fillEl.style.width = pct + '%';
+  fillEl.style.background = pct > 80 ? 'var(--red)' : pct > 50 ? 'var(--gold2)' : 'var(--gold)';
+  detailEl.innerHTML =
+    `<span>Tareas: ${fmt(tasksBytes)}</span>` +
+    `<span>Proyectos: ${fmt(projBytes)}</span>` +
+    `<span>Categorías: ${fmt(catsBytes)}</span>` +
+    `<span>${tasks.length} tarea${tasks.length !== 1 ? 's' : ''}</span>`;
+
+  // Use Storage API for real quota if supported
+  if (navigator.storage && navigator.storage.estimate) {
+    navigator.storage.estimate().then(({ usage, quota }) => {
+      if (!usage || !quota) return;
+      const pctReal = Math.min(Math.round(usage / quota * 100), 100);
+      valueEl.textContent = fmt(usage) + ' de ' + fmt(quota);
+      fillEl.style.width = pctReal + '%';
+      fillEl.style.background = pctReal > 80 ? 'var(--red)' : pctReal > 50 ? 'var(--gold2)' : 'var(--gold)';
+    }).catch(() => {});
+  }
 }
 function closeSettings() {
   if (!settingsOverlay) return;
@@ -1019,6 +1159,35 @@ function initSettings() {
   emojiGrid  = document.getElementById('settings-emoji-grid');
 
   if (!settingsOverlay) { console.warn('Settings overlay not found'); return; }
+
+  // ── Drag-and-drop de respaldo sobre el panel de ajustes ──
+  const dropOverlay = document.getElementById('settings-drop-overlay');
+  let _dragCounter = 0;
+  settingsOverlay.addEventListener('dragenter', e => {
+    if (!settingsOverlay.classList.contains('open')) return;
+    const hasFile = e.dataTransfer && [...e.dataTransfer.items].some(i => i.kind === 'file');
+    if (!hasFile) return;
+    e.preventDefault();
+    _dragCounter++;
+    dropOverlay.classList.add('active');
+  });
+  settingsOverlay.addEventListener('dragleave', e => {
+    _dragCounter--;
+    if (_dragCounter <= 0) { _dragCounter = 0; dropOverlay.classList.remove('active'); }
+  });
+  settingsOverlay.addEventListener('dragover', e => {
+    if (!settingsOverlay.classList.contains('open')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  settingsOverlay.addEventListener('drop', e => {
+    e.preventDefault();
+    _dragCounter = 0;
+    dropOverlay.classList.remove('active');
+    if (!settingsOverlay.classList.contains('open')) return;
+    const file = e.dataTransfer.files[0];
+    if (file) importData(file);
+  });
 
   // Cerrar ajustes
   document.getElementById('settings-close').addEventListener('click', closeSettings);
@@ -1495,6 +1664,52 @@ function closeProjects() {
   projOverlay.classList.remove('open');
   projOverlay.setAttribute('aria-hidden', 'true');
   hideProjForm();
+  closeProjectDetail(false);
+}
+
+function openProjectDetail(projId) {
+  currentDetailProjId = projId;
+  const p = getProjectById(projId);
+  if (!p) return;
+  document.getElementById('proj-detail-name').textContent = p.name;
+  const descEl = document.getElementById('proj-detail-desc');
+  descEl.textContent = p.desc || '';
+  renderProjectDetailTasks();
+  document.getElementById('proj-views-wrap').classList.add('show-detail');
+}
+function closeProjectDetail(slide = true) {
+  currentDetailProjId = null;
+  if (slide) document.getElementById('proj-views-wrap').classList.remove('show-detail');
+}
+function renderProjectDetailTasks() {
+  if (!currentDetailProjId) return;
+  const container = document.getElementById('proj-detail-tasks');
+  if (!container) return;
+  const projTasks = tasks.filter(t => String(t.project) === String(currentDetailProjId) && !t.parentId);
+  if (!projTasks.length) {
+    container.innerHTML = '<div class="proj-detail-empty">No hay tareas en este proyecto aún.</div>';
+    return;
+  }
+  const pending = sortTasks(projTasks.filter(t => !t.done));
+  const done    = sortTasks(projTasks.filter(t => t.done));
+  let html = '';
+  if (pending.length) {
+    html += `<div class="proj-detail-tasks-section-label">Pendientes · ${pending.length}</div>`;
+    html += pending.map(t => renderTaskItem(t)).join('');
+  }
+  if (done.length) {
+    html += `<div class="proj-detail-tasks-section-label" style="margin-top:10px">Completadas · ${done.length}</div>`;
+    html += done.map(t => renderTaskItem(t)).join('');
+  }
+  container.innerHTML = html;
+}
+function openFormForProject(projId) {
+  rebuildProjectSelect();
+  document.getElementById('sel-project').value = String(projId);
+  document.querySelector('.form-modal-title').textContent = 'Nueva tarea';
+  document.querySelector('.btn-add').textContent = 'Agregar';
+  formOverlay.classList.add('above-projects');
+  openForm();
 }
 
 function renderProjectList() {
@@ -1508,7 +1723,7 @@ function renderProjectList() {
     const countLabel = count === 1 ? '1 tarea' : count + ' tareas';
     const descHtml = p.desc ? `<div class="project-card-desc">${escHtml(p.desc)}</div>` : '';
     return `<div class="project-card" data-proj-id="${p.id}">
-      <div class="project-card-body">
+      <div class="project-card-body" style="cursor:pointer">
         <div class="project-card-name">${escHtml(p.name)}</div>
         ${descHtml}
         <div class="project-card-count">${countLabel}</div>
@@ -1522,10 +1737,13 @@ function renderProjectList() {
 
   // Wire edit/delete buttons
   projList.querySelectorAll('[data-proj-edit]').forEach(btn => {
-    btn.addEventListener('click', () => showProjForm(Number(btn.dataset.projEdit)));
+    btn.addEventListener('click', e => { e.stopPropagation(); showProjForm(Number(btn.dataset.projEdit)); });
   });
   projList.querySelectorAll('[data-proj-del]').forEach(btn => {
-    btn.addEventListener('click', () => confirmDeleteProject(Number(btn.dataset.projDel)));
+    btn.addEventListener('click', e => { e.stopPropagation(); confirmDeleteProject(Number(btn.dataset.projDel)); });
+  });
+  projList.querySelectorAll('.project-card-body').forEach(body => {
+    body.addEventListener('click', () => openProjectDetail(Number(body.closest('[data-proj-id]').dataset.projId)));
   });
 }
 
@@ -1607,6 +1825,7 @@ function initProjects() {
   projNameIn = document.getElementById('project-name');
   projDescIn = document.getElementById('project-desc');
   projConfirmOverlay = document.getElementById('project-confirm-overlay');
+  subtaskCompleteOverlay = document.getElementById('subtask-complete-overlay');
 
   if (!projOverlay) return;
 
@@ -1662,6 +1881,18 @@ function initProjects() {
   document.getElementById('project-confirm-cancel').addEventListener('click', () => {
     pendingDeleteProjId = null;
     projConfirmOverlay.classList.remove('open');
+  });
+
+  // Subtask complete dialog buttons
+  document.getElementById('subtask-complete-free').addEventListener('click', () => executeCompleteParent('free'));
+  document.getElementById('subtask-complete-all').addEventListener('click', () => executeCompleteParent('all'));
+  document.getElementById('subtask-complete-cancel').addEventListener('click', () => executeCompleteParent('cancel'));
+
+  // Project detail
+  document.getElementById('proj-back-btn').addEventListener('click', closeProjectDetail);
+  document.getElementById('proj-detail-close').addEventListener('click', closeProjects);
+  document.getElementById('proj-add-task-btn').addEventListener('click', () => {
+    if (currentDetailProjId) openFormForProject(currentDetailProjId);
   });
 }
 
