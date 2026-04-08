@@ -704,12 +704,6 @@ function scheduleMinuteTick() {
   initProjects();
   initStats();
 
-  // Auto-backup: cada 15 minutos y al ocultar la pestaña
-  setInterval(() => uploadBackup(true), 15 * 60 * 1000);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') uploadBackup(true);
-  });
-
   // Verificar si hay un backup más reciente en la nube
   syncOnLoad();
 })();

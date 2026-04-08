@@ -1,0 +1,27 @@
+{
+  "name": "Daily Planner",
+  "short_name": "Planner",
+  "description": "Organizador personal de tareas",
+  "lang": "es",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f0f0f",
+  "theme_color": "#0f0f0f",
+  "icons": [
+    {
+      "src": "icons/icono-app.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icono-app.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [],
+  "categories": ["productivity", "utilities"]
+}
