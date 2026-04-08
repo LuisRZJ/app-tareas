@@ -1447,6 +1447,20 @@ select:focus, select:hover { border-color: var(--gold); color: var(--text); }
 }
 .cloud-status.ok  { color: var(--green); }
 .cloud-status.err { color: var(--red); }
+.cloud-secret-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.cloud-secret-row .settings-input {
+  flex: 1;
+}
+.cloud-secret-save {
+  flex-shrink: 0;
+  width: 38px;
+  min-width: 38px;
+  padding: 8px 0;
+}
 
 /* Sync modal (non-dismissible) */
 .sync-modal-overlay {

@@ -111,6 +111,15 @@ document.getElementById('settings-mount').innerHTML = `
           </div>
           <p class="settings-section-desc">Guarda y restaura tus datos automáticamente desde un repositorio privado de GitHub.</p>
 
+          <div class="settings-field">
+            <label class="settings-label" for="cloud-secret">Clave de acceso</label>
+            <div class="cloud-secret-row">
+              <input class="settings-input" id="cloud-secret" type="password" placeholder="Pega tu BACKUP_SECRET" autocomplete="off"/>
+              <button class="settings-data-btn cloud-secret-save" id="cloud-secret-save" title="Guardar clave">✓</button>
+            </div>
+            <span class="settings-section-desc" style="margin-top:2px">La misma clave que configuraste en BACKUP_SECRET de Vercel.</span>
+          </div>
+
           <div class="cloud-status-row">
             <span class="cloud-status-dot" id="cloud-status-dot"></span>
             <span class="cloud-status" id="cloud-status">No sincronizado</span>

@@ -7,6 +7,17 @@ let editingId = null;
 let subtaskParentId = null;
 let detailStack = [];
 let _backupSha = null;
+let _dataDirty = false;
+let _backupSecret = null;
+
+function markDirty() { _dataDirty = true; }
+
+async function getCloudHeaders(extra = {}) {
+  if (!_backupSecret) _backupSecret = await dbGetMeta('backupSecret');
+  const h = { ...extra };
+  if (_backupSecret) h['Authorization'] = 'Bearer ' + _backupSecret;
+  return h;
+}
 
 // ── Categorías: poblar select dinámicamente ──
 function rebuildCatSelect(preserveValue) {
@@ -218,11 +229,13 @@ async function addTask() {
       t.due = due; t.dueTime = dueTime; t.repeat = repeat; t.project = project;
       await dbPut(t);
     }
+    markDirty();
     showToast('✎ Tarea actualizada');
   } else {
     const task = { id: now(), text, desc, cat, pri, due, dueTime, repeat, project, parentId: subtaskParentId || null, done: false, time: new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}) };
     tasks.unshift(task);
     await dbPut(task);
+    markDirty();
     showToast(subtaskParentId ? '✓ Subtarea agregada' : '✓ Tarea agregada');
   }
 
@@ -264,6 +277,7 @@ async function toggleDone(id) {
     };
     tasks.unshift(newTask);
     await dbPut(newTask);
+    markDirty();
     render();
     showToast(`🔁 Reprogramada para ${formatDateNice(next.due)}`, {
       undo: true,
@@ -284,6 +298,7 @@ async function toggleDone(id) {
     }
     t.done = !t.done;
     await dbPut(t);
+    markDirty();
     render();
     if (t.done) {
       showToast('🎉 ¡Tarea completada!', {
@@ -312,6 +327,7 @@ async function deleteTask(id) {
   const removedTasks = tasks.filter(t => toDelete.includes(t.id));
   tasks = tasks.filter(t => !toDelete.includes(t.id));
   for (const tid of toDelete) await dbDelete(tid);
+  markDirty();
   render();
   if (detailStack.length) {
     if (toDelete.includes(detailStack[detailStack.length - 1])) closeTaskDetail();
@@ -1058,6 +1074,7 @@ function initSettings() {
     await saveCustomCat(catRecord);
     if (editingCatKey) delete CATS[editingCatKey];
     CATS[key] = { color: selectedColor, label: icon + ' ' + name, custom: true };
+    markDirty();
     hideCatForm();
     await renderSettingsCats();
     rebuildCatSelect();
@@ -1086,6 +1103,23 @@ function initSettings() {
   // ── Nube ──
   document.getElementById('cloud-upload').addEventListener('click', () => uploadBackup(false));
   document.getElementById('cloud-download').addEventListener('click', downloadBackupFromCloud);
+
+  // ── Secret de backup ──
+  const secretInput = document.getElementById('cloud-secret');
+  const secretSave  = document.getElementById('cloud-secret-save');
+  dbGetMeta('backupSecret').then(v => { if (v) { secretInput.value = '••••••••'; secretInput.dataset.saved = '1'; } });
+  secretSave.addEventListener('click', async () => {
+    const val = secretInput.value.trim();
+    if (!val || val === '••••••••') return;
+    await dbSetMeta('backupSecret', val);
+    _backupSecret = val;
+    secretInput.value = '••••••••';
+    secretInput.dataset.saved = '1';
+    showToast('✓ Clave guardada');
+  });
+  secretInput.addEventListener('focus', () => {
+    if (secretInput.dataset.saved === '1') { secretInput.value = ''; secretInput.dataset.saved = ''; }
+  });
 }
 
 // ── Borrar todos los datos ──
@@ -1110,6 +1144,7 @@ async function clearAllData() {
     confirmEl.style.display = 'none';
     statusEl.textContent = '✓ Datos borrados.';
     statusEl.className = 'settings-data-status ok';
+    markDirty();
     showToast('✓ Datos borrados');
   } catch (err) {
     confirmEl.style.display = 'none';
@@ -1142,6 +1177,7 @@ async function restoreFromPayload(payload) {
   rebuildFilterButtons();
   if (document.getElementById('settings-cats-default')) await renderSettingsCats();
   await render();
+  markDirty();
   return incoming.tasks.length;
 }
 
@@ -1211,11 +1247,13 @@ function setCloudStatus(msg, type) {
 
 // ── Cloud backup: subir ──
 async function uploadBackup(silent = false) {
+  if (silent && !_dataDirty) return;
   if (!silent) setCloudStatus('Subiendo…', '');
   try {
+    const headers = await getCloudHeaders();
     // Si no tenemos sha, obtenerlo primero para no crear conflicto en GitHub
     if (!_backupSha) {
-      const chk = await fetch('/api/backup');
+      const chk = await fetch('/api/backup', { headers });
       if (chk.ok) {
         const chkData = await chk.json();
         if (chkData.exists) _backupSha = chkData.sha;
@@ -1233,12 +1271,13 @@ async function uploadBackup(silent = false) {
     };
     const r = await fetch('/api/backup', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getCloudHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ payload, sha: _backupSha })
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     _backupSha = data.sha;
+    _dataDirty = false;
     await dbSetMeta('lastBackupTime', payload.exported);
     const t = new Date();
     const timeStr = t.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
@@ -1255,7 +1294,8 @@ async function uploadBackup(silent = false) {
 async function downloadBackupFromCloud() {
   setCloudStatus('Descargando…', '');
   try {
-    const r = await fetch('/api/backup');
+    const headers = await getCloudHeaders();
+    const r = await fetch('/api/backup', { headers });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
     if (!data.exists) {
@@ -1278,7 +1318,8 @@ async function downloadBackupFromCloud() {
 // ── Al arrancar: comparar datos locales con backup en la nube ──
 async function syncOnLoad() {
   try {
-    const r = await fetch('/api/backup');
+    const headers = await getCloudHeaders();
+    const r = await fetch('/api/backup', { headers });
     if (!r.ok) return;
     const remote = await r.json();
     if (!remote.exists) return;
@@ -1371,6 +1412,7 @@ async function renderSettingsCats() {
 async function deleteCustomCat(key) {
   await deleteCustomCatDB(key);
   delete CATS[key];
+  markDirty();
   await renderSettingsCats();
   rebuildCatSelect();
   rebuildFilterButtons();
@@ -1532,6 +1574,7 @@ async function executeDeleteProject(keepTasks) {
   }
 
   await deleteProjectDB(id);
+  markDirty();
   if (filterMode === 'proj:' + id) { filterMode = 'all'; document.getElementById('filter-toggle-label').textContent = 'Filtros'; document.getElementById('filters-toggle').classList.remove('filtered'); }
   rebuildProjectSelect();
   rebuildFilterButtons();
@@ -1583,10 +1626,12 @@ function initProjects() {
         existing.desc = desc;
         await saveProject(existing);
       }
+      markDirty();
       showToast('✎ Proyecto actualizado');
     } else {
       const proj = { id: Date.now(), name, desc };
       await saveProject(proj);
+      markDirty();
       showToast('✓ Proyecto creado');
     }
 

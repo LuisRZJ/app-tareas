@@ -6,16 +6,26 @@ module.exports = async function handler(req, res) {
   // Cabeceras CORS para desarrollo local con `vercel dev`
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-  const OWNER        = process.env.GITHUB_OWNER || 'LuisRZJ';
-  const REPO         = process.env.GITHUB_REPO  || 'base-de-datos-app-tareas';
-  const FILE_PATH    = 'backup.json';
+  const GITHUB_TOKEN  = process.env.GITHUB_TOKEN;
+  const BACKUP_SECRET = process.env.BACKUP_SECRET;
+  const OWNER         = process.env.GITHUB_OWNER || 'LuisRZJ';
+  const REPO          = process.env.GITHUB_REPO  || 'base-de-datos-app-tareas';
+  const FILE_PATH     = 'backup.json';
 
   if (!GITHUB_TOKEN) {
     return res.status(500).json({ error: 'GITHUB_TOKEN no configurado en variables de entorno' });
+  }
+
+  // ── Autorización: verificar token estático ──
+  if (BACKUP_SECRET) {
+    const auth = req.headers['authorization'] || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    if (token !== BACKUP_SECRET) {
+      return res.status(401).json({ error: 'No autorizado' });
+    }
   }
 
   const BASE = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`;
