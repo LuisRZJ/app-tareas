@@ -24,18 +24,48 @@ async function getCloudHeaders(extra = {}) {
 }
 
 // ── Categorías: poblar select dinámicamente ──
+function getTaskCats(t) {
+  if (Array.isArray(t.cats) && t.cats.length) return t.cats;
+  return t.cat ? [t.cat] : [];
+}
+function getCatSelectValues() {
+  const dd = document.getElementById('cat-multi-dropdown');
+  if (!dd) return [];
+  return [...dd.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
+}
+function setCatSelectValues(arr) {
+  const dd = document.getElementById('cat-multi-dropdown');
+  if (!dd) return;
+  dd.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = arr.includes(cb.value); });
+  updateCatTriggerLabel();
+}
+function updateCatTriggerLabel() {
+  const trigger = document.getElementById('cat-multi-trigger');
+  if (!trigger) return;
+  const selected = getCatSelectValues();
+  if (!selected.length) { trigger.textContent = '— Sin categoría'; return; }
+  const first = CATS[selected[0]];
+  const label = first ? first.label : selected[0];
+  trigger.textContent = selected.length > 1 ? `${label} +${selected.length - 1}` : label;
+}
 function rebuildCatSelect(preserveValue) {
-  const sel = document.getElementById('sel-cat');
-  if (!sel) return;
-  const prev = preserveValue !== undefined ? preserveValue : sel.value;
-  sel.innerHTML = '<option value="">— Sin categoría</option>';
+  const dd = document.getElementById('cat-multi-dropdown');
+  if (!dd) return;
+  const prev = preserveValue !== undefined
+    ? (Array.isArray(preserveValue) ? preserveValue : [preserveValue].filter(Boolean))
+    : getCatSelectValues();
+  dd.innerHTML = '';
   for (const [key, cat] of Object.entries(CATS)) {
-    const opt = document.createElement('option');
-    opt.value = key;
-    opt.textContent = cat.label;
-    sel.appendChild(opt);
+    const label = document.createElement('label');
+    label.className = 'cat-multi-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.value = key; cb.checked = prev.includes(key);
+    cb.addEventListener('change', updateCatTriggerLabel);
+    const dot = document.createElement('span'); dot.className = 'tag-dot'; dot.style.background = cat.color;
+    label.append(cb, dot, document.createTextNode(cat.label));
+    dd.appendChild(label);
   }
-  if (prev) sel.value = prev;
+  updateCatTriggerLabel();
 }
 
 // ── Filtros: reconstruir botones de categoría y proyecto dinámicamente ──
@@ -91,18 +121,53 @@ function rebuildFilterButtons() {
 }
 
 // ── Proyectos: poblar select dinámicamente ──
+function getProjSelectValue() {
+  const dd = document.getElementById('proj-select-dropdown');
+  if (!dd) return '';
+  const checked = dd.querySelector('input[type=radio]:checked');
+  return checked ? checked.value : '';
+}
+function setProjSelectValue(val) {
+  const dd = document.getElementById('proj-select-dropdown');
+  if (!dd) return;
+  dd.querySelectorAll('input[type=radio]').forEach(r => { r.checked = false; });
+  const rb = dd.querySelector(`input[type=radio][value="${CSS.escape(String(val))}"]`)
+    || dd.querySelector(`input[type=radio][value="${String(val)}"]`);
+  if (rb) rb.checked = true;
+  updateProjTriggerLabel();
+}
+function updateProjTriggerLabel() {
+  const trigger = document.getElementById('proj-select-trigger');
+  if (!trigger) return;
+  const val = getProjSelectValue();
+  if (!val) { trigger.textContent = '\u2014 Sin proyecto'; return; }
+  const proj = getProjectById(Number(val));
+  trigger.textContent = proj ? '\u25ab ' + proj.name : '\u2014 Sin proyecto';
+}
 function rebuildProjectSelect(preserveValue) {
-  const sel = document.getElementById('sel-project');
-  if (!sel) return;
-  const prev = preserveValue !== undefined ? preserveValue : sel.value;
-  sel.innerHTML = '<option value="">— Sin proyecto</option>';
+  const dd = document.getElementById('proj-select-dropdown');
+  if (!dd) return;
+  const prev = preserveValue !== undefined ? String(preserveValue) : getProjSelectValue();
+  dd.innerHTML = '';
+  // "Sin proyecto" option
+  const noneLabel = document.createElement('label');
+  noneLabel.className = 'cat-multi-item';
+  const noneRb = document.createElement('input');
+  noneRb.type = 'radio'; noneRb.name = 'proj-select-rb'; noneRb.value = ''; noneRb.checked = !prev;
+  noneRb.addEventListener('change', () => { updateProjTriggerLabel(); document.getElementById('proj-select-dropdown').classList.remove('open'); });
+  noneLabel.append(noneRb, document.createTextNode('\u2014 Sin proyecto'));
+  dd.appendChild(noneLabel);
   for (const proj of PROJECTS) {
-    const opt = document.createElement('option');
-    opt.value = proj.id;
-    opt.textContent = '◫ ' + proj.name;
-    sel.appendChild(opt);
+    const label = document.createElement('label');
+    label.className = 'cat-multi-item';
+    const rb = document.createElement('input');
+    rb.type = 'radio'; rb.name = 'proj-select-rb'; rb.value = String(proj.id); rb.checked = String(proj.id) === String(prev);
+    rb.addEventListener('change', () => { updateProjTriggerLabel(); document.getElementById('proj-select-dropdown').classList.remove('open'); });
+    const icon = document.createElement('span'); icon.textContent = '\u25ab'; icon.style.cssText = 'font-size:11px;color:var(--text3);flex-shrink:0';
+    label.append(rb, icon, document.createTextNode('\u00a0' + proj.name));
+    dd.appendChild(label);
   }
-  if (prev) sel.value = prev;
+  updateProjTriggerLabel();
 }
 
 function updateDateLabel() {
@@ -235,9 +300,9 @@ async function addTask() {
   const descInput = document.getElementById('new-desc');
   const text = input.value.trim();
   if (!text) { showToast('✏️  Escribe una tarea primero'); input.focus(); return; }
-  const cat = document.getElementById('sel-cat').value;
+  const cats = getCatSelectValues();
   const pri = document.getElementById('sel-pri').value;
-  const project = document.getElementById('sel-project').value || '';
+  const project = getProjSelectValue();
   const desc    = descInput ? descInput.value.trim() : '';
   const due     = document.getElementById('sel-due').value || '';
   const dueTime = due ? (document.getElementById('sel-time').value || '') : '';
@@ -248,14 +313,14 @@ async function addTask() {
   if (editingId !== null) {
     const t = tasks.find(t => t.id === editingId);
     if (t) {
-      t.text = text; t.desc = desc; t.cat = cat; t.pri = pri;
+      t.text = text; t.desc = desc; t.cats = cats; t.cat = cats[0] || ''; t.pri = pri;
       t.due = due; t.dueTime = dueTime; t.repeat = repeat; t.project = project;
       await dbPut(t);
     }
     markDirty();
     showToast('✎ Tarea actualizada');
   } else {
-    const task = { id: now(), text, desc, cat, pri, due, dueTime, repeat, project, parentId: subtaskParentId || null, done: false, time: new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}) };
+    const task = { id: now(), text, desc, cats, cat: cats[0] || '', pri, due, dueTime, repeat, project, parentId: subtaskParentId || null, done: false, time: new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}) };
     tasks.unshift(task);
     await dbPut(task);
     markDirty();
@@ -279,19 +344,18 @@ async function toggleDone(id) {
   if (!t) return;
 
   if (!t.done && t.repeat && t.due) {
-    // Eliminar la completada y crear la siguiente ocurrencia
-    const original = { ...t };
-    // Guardar subtareas directas antes de eliminar el padre
+    // Archivar la ocurrencia completada (done:true) y crear la siguiente
     const childTasks = tasks.filter(task => task.parentId === t.id);
-    const originalChildParentIds = childTasks.map(c => c.id); // solo para referencia
-    tasks = tasks.filter(task => task.id !== t.id);
-    await dbDelete(t.id);
+    // Marcar la ocurrencia actual como completada (queda como historial)
+    t.done = true;
+    await dbPut(t);
     const next = addRepeat(t.due, t.dueTime || '', t.repeat);
     const newTask = {
       id: now(),
       text: t.text,
       desc: t.desc,
-      cat: t.cat,
+      cats: getTaskCats(t),
+      cat: getTaskCats(t)[0] || '',
       pri: t.pri,
       due: next.due,
       dueTime: next.dueTime,
@@ -313,13 +377,13 @@ async function toggleDone(id) {
     showToast(`🔁 Reprogramada para ${formatDateNice(next.due)}`, {
       undo: true,
       onUndo: async () => {
-        // Borrar la nueva ocurrencia, restaurar el padre original y reasignar subtareas
+        // Borrar la nueva ocurrencia, restaurar el padre original como pendiente
         tasks = tasks.filter(task => task.id !== newTask.id);
         await dbDelete(newTask.id);
-        tasks.unshift(original);
-        await dbPut(original);
+        t.done = false;
+        await dbPut(t);
         for (const child of childTasks) {
-          child.parentId = original.id;
+          child.parentId = t.id;
           await dbPut(child);
         }
         render();
@@ -509,7 +573,7 @@ function filteredTasks() {
     case 'done':    result = base; break;
     case 'pending': result = base; break;
     default:
-      if (filterMode in CATS) result = base.filter(t => t.cat === filterMode);
+      if (filterMode in CATS) result = base.filter(t => getTaskCats(t).includes(filterMode));
       else if (filterMode.startsWith('proj:')) result = base.filter(t => String(t.project) === filterMode.slice(5));
       else result = base;
   }
@@ -541,7 +605,7 @@ function render() {
   const isProjFilter = filterMode.startsWith('proj:');
   const todayAll = tasks.filter(t => {
     if (t.due !== todayISO()) return false;
-    if (isCatFilter) return t.cat === filterMode;
+    if (isCatFilter) return getTaskCats(t).includes(filterMode);
     if (isProjFilter) return String(t.project) === filterMode.slice(5);
     return true;
   });
@@ -651,28 +715,34 @@ function render() {
 }
 
 function renderTaskItem(t) {
-  const cat = CATS[t.cat] || CATS.otro;
+  const taskCats = getTaskCats(t);
+  const primaryCat = taskCats.length ? (CATS[taskCats[0]] || CATS.otro) : null;
+  const extraCount = taskCats.length - 1;
   const overdueClass = isTaskOverdue(t) ? 'overdue' : '';
-  const catTag = t.cat ? `<span class="tag"><span class="tag-dot" style="background:${cat.color}"></span>${cat.label}</span>` : '';
+  const catTag = primaryCat
+    ? `<span class="tag"><span class="tag-dot" style="background:${primaryCat.color}"></span>${primaryCat.label}${extraCount > 0 ? `<span class="tag-extra">+${extraCount}</span>` : ''}</span>`
+    : '';
   const priColor = t.pri === 'high' ? '#8b1a1a' : t.pri === 'mid' ? '#7a6a00' : '#1a5c1a';
-  return `<div class="task-item ${t.done?'done':''} ${overdueClass}" style="--cat-color:${t.cat ? cat.color : 'var(--border2)'};--pri-color:${priColor}" data-id="${t.id}">
-      <div class="task-check ${t.done?'checked':''}" onclick="toggleDone(${t.id})" title="${t.done?'Reabrir':'Completar'}"></div>
-      <div class="task-body" onclick="openTaskDetail(${t.id})" style="cursor:pointer">
-        <div class="task-text md-content">${renderMd(t.text)}</div>
-        ${t.desc ? `<div class="task-desc md-content">${renderMd(t.desc)}</div>` : ''}
-        <div class="task-meta">
-          ${catTag}
-          ${getProjectBadge(t)}
-          ${getPriLabel(t.pri)}
-          ${getDueBadge(t)}
-          ${getRepeatBadge(t)}
-          ${getSubtaskBadge(t)}
-          <span class="task-time">${formatCreatedTime(t)}</span>
+  return `<div class="task-item ${t.done?'done':''} ${overdueClass}" style="--cat-color:${primaryCat ? primaryCat.color : 'var(--border2)'};--pri-color:${priColor}" data-id="${t.id}">
+      <div class="task-row-top">
+        <div class="task-check ${t.done?'checked':''}" onclick="toggleDone(${t.id})" title="${t.done?'Reabrir':'Completar'}"></div>
+        <div class="task-body" onclick="openTaskDetail(${t.id})" style="cursor:pointer">
+          <div class="task-text md-content">${renderMd(t.text)}</div>
+          ${t.desc ? `<div class="task-desc md-content">${renderMd(t.desc)}</div>` : ''}
+        </div>
+        <div class="task-actions">
+          <button class="act-btn edit" onclick="editTask(${t.id})" title="Editar">✎</button>
+          <button class="act-btn del" onclick="deleteTask(${t.id})" title="Eliminar">✕</button>
         </div>
       </div>
-      <div class="task-actions">
-        <button class="act-btn edit" onclick="editTask(${t.id})" title="Editar">✎</button>
-        <button class="act-btn del" onclick="deleteTask(${t.id})" title="Eliminar">✕</button>
+      <div class="task-meta">
+        ${catTag}
+        ${getProjectBadge(t)}
+        ${getPriLabel(t.pri)}
+        ${getDueBadge(t)}
+        ${getRepeatBadge(t)}
+        ${getSubtaskBadge(t)}
+        <span class="task-time">${formatCreatedTime(t)}</span>
       </div>
     </div>`;
 }
@@ -846,8 +916,11 @@ function updateDetailBackBtn() {
 function renderDetailBody(id) {
   const t = tasks.find(t => t.id === id);
   if (!t) { detailBody.innerHTML = '<p class="detail-no-subtasks">Tarea no encontrada</p>'; return; }
-  const cat = CATS[t.cat] || CATS.otro;
-  const catTag = t.cat ? `<span class="tag"><span class="tag-dot" style="background:${cat.color}"></span>${cat.label}</span>` : '';
+  const taskCats = getTaskCats(t);
+  const catTag = taskCats.map(key => {
+    const c = CATS[key] || CATS.otro;
+    return `<span class="tag"><span class="tag-dot" style="background:${c.color}"></span>${c.label}</span>`;
+  }).join('');
   const subs = getSubtasks(id);
 
   detailBody.innerHTML = `
@@ -883,9 +956,9 @@ function renderDetailBody(id) {
     // Inherit cat, pri, project from the nearest parent task
     const parent = tasks.find(t => t.id === id);
     if (parent) {
-      document.getElementById('sel-cat').value = parent.cat || '';
+      setCatSelectValues(getTaskCats(parent));
       document.getElementById('sel-pri').value = parent.pri || 'high';
-      document.getElementById('sel-project').value = parent.project || '';
+      setProjSelectValue(parent.project || '');
     }
     openForm();
   });
@@ -929,30 +1002,36 @@ function renderDetailBody(id) {
 }
 
 function renderSubtaskItem(t) {
-  const cat = CATS[t.cat] || null;
-  const catTag = t.cat && cat ? `<span class="tag"><span class="tag-dot" style="background:${cat.color}"></span>${cat.label}</span>` : '';
+  const taskCats = getTaskCats(t);
+  const primaryCat = taskCats.length ? (CATS[taskCats[0]] || null) : null;
+  const extraCount = taskCats.length - 1;
+  const catTag = primaryCat
+    ? `<span class="tag"><span class="tag-dot" style="background:${primaryCat.color}"></span>${primaryCat.label}${extraCount > 0 ? `<span class="tag-extra">+${extraCount}</span>` : ''}</span>`
+    : '';
   const priColor = t.pri === 'high' ? '#8b1a1a' : t.pri === 'mid' ? '#7a6a00' : '#1a5c1a';
   const overdueClass = isTaskOverdue(t) ? 'overdue' : '';
   const subCount = getSubtasks(t.id);
   const subBadge = subCount.length ? `<span class="subtask-badge">☐ ${subCount.filter(s=>s.done).length}/${subCount.length}</span>` : '';
-  return `<div class="task-item ${t.done?'done':''} ${overdueClass}" style="--cat-color:${t.cat && cat ? cat.color : 'var(--border2)'};--pri-color:${priColor}" data-subtask-open="${t.id}">
-    <div class="task-check ${t.done?'checked':''}" data-subtask-toggle="${t.id}" title="${t.done?'Reabrir':'Completar'}"></div>
-    <div class="task-body" style="cursor:pointer">
-      <div class="task-text md-content">${renderMd(t.text)}</div>
-      ${t.desc ? `<div class="task-desc md-content">${renderMd(t.desc)}</div>` : ''}
-      <div class="task-meta">
-        ${catTag}
-        ${getProjectBadge(t)}
-        ${getPriLabel(t.pri)}
-        ${getDueBadge(t)}
-        ${getRepeatBadge(t)}
-        ${subBadge}
-        <span class="task-time">${formatCreatedTime(t)}</span>
+  return `<div class="task-item ${t.done?'done':''} ${overdueClass}" style="--cat-color:${primaryCat ? primaryCat.color : 'var(--border2)'};--pri-color:${priColor}" data-subtask-open="${t.id}">
+    <div class="task-row-top">
+      <div class="task-check ${t.done?'checked':''}" data-subtask-toggle="${t.id}" title="${t.done?'Reabrir':'Completar'}"></div>
+      <div class="task-body" style="cursor:pointer">
+        <div class="task-text md-content">${renderMd(t.text)}</div>
+        ${t.desc ? `<div class="task-desc md-content">${renderMd(t.desc)}</div>` : ''}
+      </div>
+      <div class="task-actions">
+        <button class="act-btn edit" data-subtask-edit="${t.id}" title="Editar">✎</button>
+        <button class="act-btn del" data-subtask-del="${t.id}" title="Eliminar">✕</button>
       </div>
     </div>
-    <div class="task-actions">
-      <button class="act-btn edit" data-subtask-edit="${t.id}" title="Editar">✎</button>
-      <button class="act-btn del" data-subtask-del="${t.id}" title="Eliminar">✕</button>
+    <div class="task-meta">
+      ${catTag}
+      ${getProjectBadge(t)}
+      ${getPriLabel(t.pri)}
+      ${getDueBadge(t)}
+      ${getRepeatBadge(t)}
+      ${subBadge}
+      <span class="task-time">${formatCreatedTime(t)}</span>
     </div>
   </div>`;
 }
@@ -1010,7 +1089,8 @@ function closeForm() {
   document.getElementById('sel-time').value = '';
   document.getElementById('sel-repeat-n').value = '';
   document.getElementById('sel-repeat-unit').value = '';
-  document.getElementById('sel-project').value = '';
+  setCatSelectValues([]);
+  setProjSelectValue('');
   syncRepeatN();
   document.querySelector('.form-modal-title').textContent = 'Nueva tarea';
   document.querySelector('.btn-add').textContent = 'Agregar';
@@ -1022,11 +1102,11 @@ function editTask(id) {
   editingId = id;
   document.getElementById('new-task').value = t.text;
   document.getElementById('new-desc').value = t.desc || '';
-  document.getElementById('sel-cat').value = t.cat;
+  setCatSelectValues(getTaskCats(t));
   document.getElementById('sel-pri').value = t.pri;
   document.getElementById('sel-due').value = t.due || '';
   document.getElementById('sel-time').value = t.dueTime || '';
-  document.getElementById('sel-project').value = t.project || '';
+  setProjSelectValue(t.project || '');
   if (t.repeat) {
     const parts = String(t.repeat).includes(':') ? String(t.repeat).split(':') : [String(t.repeat), 'd'];
     document.getElementById('sel-repeat-n').value = parts[0];
@@ -1076,6 +1156,25 @@ syncRepeatN();
 
 formClose.addEventListener('click', closeForm);
 formOverlay.addEventListener('click', e => { if (e.target === formOverlay) closeForm(); });
+// Cat multi-select toggle
+document.getElementById('cat-multi-trigger').addEventListener('click', e => {
+  e.stopPropagation();
+  document.getElementById('cat-multi-dropdown').classList.toggle('open');
+});
+document.getElementById('proj-select-trigger').addEventListener('click', e => {
+  e.stopPropagation();
+  document.getElementById('proj-select-dropdown').classList.toggle('open');
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('#cat-multi-wrap')) {
+    const dd = document.getElementById('cat-multi-dropdown');
+    if (dd) dd.classList.remove('open');
+  }
+  if (!e.target.closest('#proj-select-wrap')) {
+    const dd = document.getElementById('proj-select-dropdown');
+    if (dd) dd.classList.remove('open');
+  }
+});
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeForm(); closeTaskDetail(); if (typeof closeSettings === 'function') closeSettings(); if (typeof closeProjects === 'function') closeProjects(); if (typeof closeStats === 'function') closeStats(); } });
 
 // ══════════════════════════════════════════
@@ -1705,7 +1804,7 @@ function renderProjectDetailTasks() {
 }
 function openFormForProject(projId) {
   rebuildProjectSelect();
-  document.getElementById('sel-project').value = String(projId);
+  setProjSelectValue(String(projId));
   document.querySelector('.form-modal-title').textContent = 'Nueva tarea';
   document.querySelector('.btn-add').textContent = 'Agregar';
   formOverlay.classList.add('above-projects');
@@ -2023,7 +2122,7 @@ function renderBreakdown(done, prefix) {
 
   // Categories with at least 1 completion
   const catRows = Object.entries(CATS)
-    .map(([key, cat]) => ({ key, cat, count: done.filter(t => t.cat === key).length }))
+    .map(([key, cat]) => ({ key, cat, count: done.filter(t => getTaskCats(t).includes(key)).length }))
     .filter(e => e.count > 0)
     .sort((a, b) => b.count - a.count);
 

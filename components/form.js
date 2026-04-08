@@ -65,13 +65,15 @@ document.getElementById('form-mount').innerHTML = `
         </div>
         <div class="form-bottom">
           <label>Proyecto</label>
-          <select id="sel-project">
-            <option value="">— Sin proyecto</option>
-          </select>
+          <div class="cat-multi-wrap" id="proj-select-wrap">
+            <button type="button" class="cat-multi-trigger" id="proj-select-trigger">— Sin proyecto</button>
+            <div class="cat-multi-dropdown" id="proj-select-dropdown"></div>
+          </div>
           <label>Cat.</label>
-          <select id="sel-cat">
-            <option value="">— Sin categoría</option>
-          </select>
+          <div class="cat-multi-wrap" id="cat-multi-wrap">
+            <button type="button" class="cat-multi-trigger" id="cat-multi-trigger">— Sin categoría</button>
+            <div class="cat-multi-dropdown" id="cat-multi-dropdown"></div>
+          </div>
           <label>Prioridad</label>
           <select id="sel-pri">
             <option value="mid">Media</option>
