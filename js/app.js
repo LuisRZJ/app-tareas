@@ -111,7 +111,10 @@ updateDateLabel();
 
 // ── Helpers de fecha ──
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
 }
 function addDays(dateStr, days) {
   const d = new Date(dateStr + 'T12:00:00');
@@ -822,22 +825,39 @@ function renderDetailBody(id) {
       await deleteTask(Number(btn.dataset.subtaskDel));
     });
   });
+  // Wire subtask edit
+  detailBody.querySelectorAll('[data-subtask-edit]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      editTask(Number(btn.dataset.subtaskEdit));
+    });
+  });
 }
 
 function renderSubtaskItem(t) {
+  const cat = CATS[t.cat] || null;
+  const catTag = t.cat && cat ? `<span class="tag"><span class="tag-dot" style="background:${cat.color}"></span>${cat.label}</span>` : '';
   const priColor = t.pri === 'high' ? '#8b1a1a' : t.pri === 'mid' ? '#7a6a00' : '#1a5c1a';
+  const overdueClass = isTaskOverdue(t) ? 'overdue' : '';
   const subCount = getSubtasks(t.id);
   const subBadge = subCount.length ? `<span class="subtask-badge">☐ ${subCount.filter(s=>s.done).length}/${subCount.length}</span>` : '';
-  return `<div class="task-item ${t.done?'done':''}" style="--pri-color:${priColor}" data-subtask-open="${t.id}">
+  return `<div class="task-item ${t.done?'done':''} ${overdueClass}" style="--cat-color:${t.cat && cat ? cat.color : 'var(--border2)'};--pri-color:${priColor}" data-subtask-open="${t.id}">
     <div class="task-check ${t.done?'checked':''}" data-subtask-toggle="${t.id}" title="${t.done?'Reabrir':'Completar'}"></div>
     <div class="task-body" style="cursor:pointer">
       <div class="task-text md-content">${renderMd(t.text)}</div>
+      ${t.desc ? `<div class="task-desc md-content">${renderMd(t.desc)}</div>` : ''}
       <div class="task-meta">
+        ${catTag}
+        ${getProjectBadge(t)}
         ${getPriLabel(t.pri)}
+        ${getDueBadge(t)}
+        ${getRepeatBadge(t)}
         ${subBadge}
+        <span class="task-time">${formatCreatedTime(t)}</span>
       </div>
     </div>
     <div class="task-actions">
+      <button class="act-btn edit" data-subtask-edit="${t.id}" title="Editar">✎</button>
       <button class="act-btn del" data-subtask-del="${t.id}" title="Eliminar">✕</button>
     </div>
   </div>`;
