@@ -749,23 +749,33 @@ function renderTaskItem(t) {
 }
 
 let _toastUndo = null;
+function dismissToast() {
+  const el = document.getElementById('toast');
+  el.classList.remove('show');
+  _toastUndo = null;
+  clearTimeout(toastTimer);
+}
+
 function showToast(msg, opts) {
   const el = document.getElementById('toast');
   _toastUndo = null;
+  const closeBtn = `<button class="toast-close" id="toast-close-btn" title="Cerrar">✕</button>`;
   if (opts && opts.undo) {
-    el.innerHTML = `${escHtml(msg)} <button class="toast-undo" id="toast-undo-btn">Deshacer</button>`;
+    el.innerHTML = `<span class="toast-msg">${escHtml(msg)}</span><button class="toast-undo" id="toast-undo-btn">Deshacer</button>${closeBtn}`;
     _toastUndo = opts.onUndo;
     document.getElementById('toast-undo-btn').addEventListener('click', () => {
       if (_toastUndo) { _toastUndo(); _toastUndo = null; }
-      el.classList.remove('show');
-      clearTimeout(toastTimer);
+      dismissToast();
     });
   } else {
-    el.textContent = msg;
+    el.innerHTML = `<span class="toast-msg">${escHtml(msg)}</span>${closeBtn}`;
   }
+  document.getElementById('toast-close-btn').addEventListener('click', dismissToast);
   el.classList.add('show');
+  el.style.transform = '';
+  el.style.opacity = '';
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.classList.remove('show'); _toastUndo = null; }, 6000);
+  toastTimer = setTimeout(dismissToast, 6000);
 }
 
 // ── Actualización en vivo al cambio de minuto ──
@@ -817,6 +827,37 @@ function scheduleMinuteTick() {
   updateDayRing();
   scheduleMinuteTick();
   document.getElementById('loader').classList.add('hidden');
+
+  // ── Toast swipe-to-dismiss ──
+  (function initToastSwipe() {
+    const el = document.getElementById('toast');
+    let startX = 0, dragX = 0, dragging = false;
+    const THRESHOLD = 80;
+    el.addEventListener('touchstart', e => {
+      if (!el.classList.contains('show')) return;
+      startX = e.touches[0].clientX;
+      dragX = 0;
+      dragging = true;
+      el.style.transition = 'none';
+    }, { passive: true });
+    el.addEventListener('touchmove', e => {
+      if (!dragging) return;
+      dragX = e.touches[0].clientX - startX;
+      el.style.transform = `translateX(calc(-50% + ${dragX}px))`;
+      el.style.opacity = String(Math.max(0, 1 - Math.abs(dragX) / 160));
+    }, { passive: true });
+    el.addEventListener('touchend', () => {
+      if (!dragging) return;
+      dragging = false;
+      el.style.transition = '';
+      if (Math.abs(dragX) >= THRESHOLD) {
+        dismissToast();
+      } else {
+        el.style.transform = '';
+        el.style.opacity = '';
+      }
+    });
+  })();
 
   // Filtro 1: Prioridad (pestañas)
   document.querySelectorAll('.pri-tab').forEach(btn => {
