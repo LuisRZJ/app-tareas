@@ -6,6 +6,7 @@ let toastTimer = null;
 let editingId = null;
 let subtaskParentId = null;
 let detailStack = [];
+let subtaskFilter = 'pending';
 let _backupSha = null;
 let _dataDirty = false;
 let _backupSecret = null;
@@ -886,6 +887,7 @@ const detailCloseBtn= document.getElementById('detail-close');
 function openTaskDetail(id) {
   const t = tasks.find(t => t.id === id);
   if (!t) return;
+  subtaskFilter = 'pending';
   detailStack.push(id);
   renderDetailBody(id);
   detailOverlay.classList.add('open');
@@ -901,6 +903,7 @@ function closeTaskDetail() {
 
 function goBackDetail() {
   if (detailStack.length > 1) {
+    subtaskFilter = 'pending';
     detailStack.pop();
     renderDetailBody(detailStack[detailStack.length - 1]);
     updateDetailBackBtn();
@@ -922,6 +925,13 @@ function renderDetailBody(id) {
     return `<span class="tag"><span class="tag-dot" style="background:${c.color}"></span>${c.label}</span>`;
   }).join('');
   const subs = getSubtasks(id);
+  const displaySubs = subtaskFilter === 'pending' ? subs.filter(s => !s.done)
+    : subtaskFilter === 'done' ? subs.filter(s => s.done)
+    : subs;
+  const emptyMsg = subtaskFilter === 'pending' ? 'Sin subtareas pendientes'
+    : subtaskFilter === 'done' ? 'Sin subtareas completadas'
+    : 'Sin subtareas aún';
+  const sfTab = v => `<button class="subtask-filter-tab${subtaskFilter === v ? ' active' : ''}" data-sf="${v}">${v === 'pending' ? 'Pendientes' : v === 'done' ? 'Completadas' : 'Todo'}</button>`;
 
   detailBody.innerHTML = `
     <div class="detail-title ${t.done ? 'done-title' : ''}">${renderMd(t.text)}</div>
@@ -942,10 +952,11 @@ function renderDetailBody(id) {
     <div>
       <div class="detail-subtasks-header">
         <span class="detail-subtasks-label">Subtareas (${subs.filter(s => s.done).length}/${subs.length})</span>
+        ${subs.length ? `<div class="subtask-filter-tabs">${sfTab('pending')}${sfTab('done')}${sfTab('all')}</div>` : ''}
       </div>
-      ${subs.length
-        ? `<div class="detail-subtasks-list">${subs.map(s => renderSubtaskItem(s)).join('')}</div>`
-        : '<div class="detail-no-subtasks">Sin subtareas aún</div>'}
+      ${displaySubs.length
+        ? `<div class="detail-subtasks-list">${displaySubs.map(s => renderSubtaskItem(s)).join('')}</div>`
+        : `<div class="detail-no-subtasks">${emptyMsg}</div>`}
     </div>
   `;
 
@@ -968,6 +979,14 @@ function renderDetailBody(id) {
   document.getElementById('detail-toggle-done').addEventListener('click', async () => {
     await toggleDone(id);
     if (detailStack.length) renderDetailBody(detailStack[detailStack.length - 1]);
+  });
+
+  // Wire subtask filter tabs
+  detailBody.querySelectorAll('[data-sf]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      subtaskFilter = btn.dataset.sf;
+      renderDetailBody(id);
+    });
   });
 
   // Wire subtask click → open detail (recursive)

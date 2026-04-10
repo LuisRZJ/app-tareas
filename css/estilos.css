@@ -2445,6 +2445,33 @@ select:focus, select:hover { border-color: var(--gold); color: var(--text); }
   text-transform: uppercase;
   color: var(--text3);
 }
+.subtask-filter-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+}
+.subtask-filter-tab {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text3);
+  padding: 3px 8px;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.subtask-filter-tab:hover { color: var(--text2); }
+.subtask-filter-tab.active {
+  background: var(--bg2);
+  color: var(--gold);
+  font-weight: 600;
+}
 .detail-subtasks-list {
   display: flex;
   flex-direction: column;
