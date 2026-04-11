@@ -349,6 +349,7 @@ async function toggleDone(id) {
     const childTasks = tasks.filter(task => task.parentId === t.id);
     // Marcar la ocurrencia actual como completada (queda como historial)
     t.done = true;
+    t.doneAt = todayISO();
     await dbPut(t);
     const next = addRepeat(t.due, t.dueTime || '', t.repeat);
     const newTask = {
@@ -382,6 +383,7 @@ async function toggleDone(id) {
         tasks = tasks.filter(task => task.id !== newTask.id);
         await dbDelete(newTask.id);
         t.done = false;
+        t.doneAt = null;
         await dbPut(t);
         for (const child of childTasks) {
           child.parentId = t.id;
@@ -404,6 +406,7 @@ async function toggleDone(id) {
     if (!t.done && !t.due) {
       t.due = todayISO();
     }
+    if (!t.done) { t.doneAt = todayISO(); } else { t.doneAt = null; }
     t.done = !t.done;
     await dbPut(t);
     markDirty();
@@ -413,6 +416,7 @@ async function toggleDone(id) {
         undo: true,
         onUndo: async () => {
           t.done = false;
+          t.doneAt = null;
           if (!hadDue) t.due = '';
           await dbPut(t);
           render();
@@ -446,6 +450,7 @@ async function executeCompleteParent(action) {
   const hadDue = t.due;
   if (!t.due) t.due = todayISO();
   t.done = true;
+  t.doneAt = todayISO();
   await dbPut(t);
   if (action === 'free') {
     // Desvincula las subtareas pendientes: pasan a ser tareas independientes
@@ -455,6 +460,7 @@ async function executeCompleteParent(action) {
     for (const s of subs) {
       if (!s.due) s.due = todayISO();
       s.done = true;
+      s.doneAt = todayISO();
       await dbPut(s);
     }
   }
@@ -464,12 +470,13 @@ async function executeCompleteParent(action) {
     undo: true,
     onUndo: async () => {
       t.done = false;
+      t.doneAt = null;
       if (!hadDue) t.due = '';
       await dbPut(t);
       if (action === 'free') {
         for (const s of subs) { s.parentId = t.id; await dbPut(s); }
       } else if (action === 'all') {
-        for (const s of subs) { s.done = false; await dbPut(s); }
+        for (const s of subs) { s.done = false; s.doneAt = null; await dbPut(s); }
       }
       render();
     }
@@ -920,6 +927,39 @@ function scheduleMinuteTick() {
 // ══════════════════════════════════════════
 // TASK DETAIL MODAL + SUBTASKS
 // ══════════════════════════════════════════
+function renderSubsGroupedByDoneAt(subs) {
+  const today = todayISO();
+  const yesterday = addDays(today, -1);
+  const groups = new Map();
+  for (const s of subs) {
+    const key = s.doneAt || '__unknown__';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
+  }
+  const sortedKeys = [...groups.keys()].sort((a, b) => {
+    if (a === '__unknown__') return 1;
+    if (b === '__unknown__') return -1;
+    return a > b ? -1 : a < b ? 1 : 0;
+  });
+  return sortedKeys.map(key => {
+    const items = groups.get(key);
+    let label;
+    if (key === '__unknown__') label = 'Fecha desconocida';
+    else if (key === today) label = 'Hoy · ' + formatDateNice(key);
+    else if (key === yesterday) label = 'Ayer · ' + formatDateNice(key);
+    else label = formatDateNice(key);
+    const count = items.length === 1 ? '1 subtarea' : `${items.length} subtareas`;
+    return `<div class="task-group">
+      <div class="task-group-header">
+        <span class="task-group-label">${label}</span>
+        <span class="task-group-line"></span>
+        <span class="task-group-count">${count}</span>
+      </div>
+      <div class="detail-subtasks-list">${items.map(s => renderSubtaskItem(s)).join('')}</div>
+    </div>`;
+  }).join('');
+}
+
 const detailOverlay = document.getElementById('detail-overlay');
 const detailBody    = document.getElementById('detail-body');
 const detailBack    = document.getElementById('detail-back');
@@ -996,7 +1036,9 @@ function renderDetailBody(id) {
         ${subs.length ? `<div class="subtask-filter-tabs">${sfTab('pending')}${sfTab('done')}${sfTab('all')}</div>` : ''}
       </div>
       ${displaySubs.length
-        ? `<div class="detail-subtasks-list">${displaySubs.map(s => renderSubtaskItem(s)).join('')}</div>`
+        ? (subtaskFilter === 'done'
+            ? renderSubsGroupedByDoneAt(displaySubs)
+            : `<div class="detail-subtasks-list">${displaySubs.map(s => renderSubtaskItem(s)).join('')}</div>`)
         : `<div class="detail-no-subtasks">${emptyMsg}</div>`}
     </div>
   `;
