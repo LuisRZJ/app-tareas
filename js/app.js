@@ -759,6 +759,9 @@ let _toastUndo = null;
 function dismissToast() {
   const el = document.getElementById('toast');
   el.classList.remove('show');
+  el.style.transform = '';
+  el.style.opacity = '';
+  el.style.transition = '';
   _toastUndo = null;
   clearTimeout(toastTimer);
 }
@@ -840,6 +843,17 @@ function scheduleMinuteTick() {
     const el = document.getElementById('toast');
     let startX = 0, dragX = 0, dragging = false;
     const THRESHOLD = 80;
+
+    function snapBack() {
+      dragging = false;
+      el.style.transition = '';
+      // rAF ensures transition is active before resetting transform
+      requestAnimationFrame(() => {
+        el.style.transform = '';
+        el.style.opacity = '';
+      });
+    }
+
     el.addEventListener('touchstart', e => {
       if (!el.classList.contains('show')) return;
       startX = e.touches[0].clientX;
@@ -847,23 +861,31 @@ function scheduleMinuteTick() {
       dragging = true;
       el.style.transition = 'none';
     }, { passive: true });
+
     el.addEventListener('touchmove', e => {
       if (!dragging) return;
       dragX = e.touches[0].clientX - startX;
       el.style.transform = `translateX(calc(-50% + ${dragX}px))`;
       el.style.opacity = String(Math.max(0, 1 - Math.abs(dragX) / 160));
     }, { passive: true });
+
     el.addEventListener('touchend', () => {
       if (!dragging) return;
-      dragging = false;
-      el.style.transition = '';
       if (Math.abs(dragX) >= THRESHOLD) {
-        dismissToast();
+        dragging = false;
+        // Animate off-screen in the drag direction, then dismiss
+        const dir = dragX > 0 ? 1 : -1;
+        el.style.transition = 'transform 0.22s ease, opacity 0.22s ease';
+        el.style.transform = `translateX(calc(-50% + ${dir * 110}vw))`;
+        el.style.opacity = '0';
+        setTimeout(dismissToast, 240);
       } else {
-        el.style.transform = '';
-        el.style.opacity = '';
+        snapBack();
       }
     });
+
+    // Cancel (browser scroll hijack, notification, etc.) — always snap back
+    el.addEventListener('touchcancel', snapBack);
   })();
 
   // Filtro 1: Prioridad (pestañas)
