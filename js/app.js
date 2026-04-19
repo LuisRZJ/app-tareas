@@ -14,6 +14,8 @@ let _pendingCompleteParent = null;
 let _pendingCompleteSubs = null;
 let subtaskCompleteOverlay = null;
 let currentDetailProjId = null;
+let dayProgressInterval = null;
+let targetTime = null;
 
 function markDirty() { _dataDirty = true; }
 
@@ -919,6 +921,163 @@ function scheduleMinuteTick() {
 
   rebuildFilterButtons();
 
+  // ── Modal de progreso del día ──
+  const dayProgressOverlay = document.getElementById('day-progress-overlay');
+  const dayProgressClose   = document.getElementById('day-progress-close');
+  const dayProgressBody    = document.getElementById('day-progress-body');
+
+  function formatTimeRemaining(seconds) {
+    if (seconds <= 0) return 'Ahora';
+    if (seconds < 60) return `${seconds} segundos`;
+    if (seconds < 3600) {
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = seconds % 60;
+      return remainingSeconds > 0 ? `${minutes} minutos y ${remainingSeconds} segundos` : `${minutes} minutos`;
+    }
+    if (seconds < 86400) {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const remainingSeconds = seconds % 60;
+      let parts = [];
+      if (hours > 0) parts.push(`${hours} hora${hours > 1 ? 's' : ''}`);
+      if (minutes > 0) parts.push(`${minutes} minuto${minutes > 1 ? 's' : ''}`);
+      if (remainingSeconds > 0) parts.push(`${remainingSeconds} segundo${remainingSeconds > 1 ? 's' : ''}`);
+      return parts.join(', ');
+    }
+    return 'Más de un día';
+  }
+
+  function updateDayProgressModal() {
+    if (!dayProgressOverlay.classList.contains('open')) return;
+    const now = new Date();
+    const totalSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const currentPct = Math.round(totalSeconds / 864);
+    let nextTimeStr, timeToNextChange, nextPctValue;
+    if (currentPct >= 100) {
+      nextTimeStr = 'Día completo';
+      timeToNextChange = 0;
+      nextPctValue = 100;
+    } else {
+      const nextPct = currentPct + 1;
+      const secondsForNextPct = nextPct * 864;
+      timeToNextChange = secondsForNextPct - totalSeconds;
+      const nextTime = new Date(now.getTime() + timeToNextChange * 1000);
+      nextTimeStr = nextTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+      nextPctValue = nextPct;
+    }
+
+    // Calcular countdown para hora objetivo
+    let targetCountdown = '00:00:00';
+    let targetMessage = 'Selecciona una hora objetivo.';
+    if (targetTime) {
+      const [targetHours, targetMinutes] = targetTime.split(':').map(Number);
+      const targetDate = new Date();
+      targetDate.setHours(targetHours, targetMinutes, 0, 0);
+      const diff = targetDate - now;
+      if (diff <= 0) {
+        targetCountdown = '00:00:00';
+        targetMessage = 'Esa hora ya ha pasado hoy.';
+      } else {
+        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+        const formattedHours = String(hours).padStart(2, '0');
+        const formattedMinutes = String(minutes).padStart(2, '0');
+        const formattedSeconds = String(seconds).padStart(2, '0');
+        targetCountdown = `${formattedHours}:${formattedMinutes}:${formattedSeconds}`;
+        targetMessage = 'Tiempo hasta tu objetivo.';
+      }
+    }
+
+    // Actualizar elementos específicos (de forma segura, si existen)
+    const elCur = document.getElementById('day-progress-current-pct');
+    if (elCur) elCur.textContent = `${currentPct}%`;
+    const elNextTime = document.getElementById('day-progress-next-time');
+    if (elNextTime) elNextTime.textContent = `Próximo cambio: ${nextTimeStr}`;
+    const elNextRem = document.getElementById('day-progress-next-remaining');
+    if (elNextRem) elNextRem.textContent = `En ${formatTimeRemaining(timeToNextChange)}`;
+    const elNextPct = document.getElementById('day-progress-next-pct');
+    if (elNextPct) elNextPct.textContent = `Nuevo porcentaje: ${nextPctValue}%`;
+    const elTargetCount = document.getElementById('day-progress-target-countdown');
+    if (elTargetCount) elTargetCount.textContent = targetCountdown;
+    const elTargetMsg = document.getElementById('day-progress-target-message');
+    if (elTargetMsg) elTargetMsg.textContent = targetMessage;
+  }
+
+  function openDayProgressModal() {
+    const now = new Date();
+    const totalSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const currentPct = Math.round(totalSeconds / 864);
+    let nextTimeStr, timeToNextChange, nextPctValue;
+    if (currentPct >= 100) {
+      nextTimeStr = 'Día completo';
+      timeToNextChange = 0;
+      nextPctValue = 100;
+    } else {
+      const nextPct = currentPct + 1;
+      const secondsForNextPct = nextPct * 864;
+      timeToNextChange = secondsForNextPct - totalSeconds;
+      const nextTime = new Date(now.getTime() + timeToNextChange * 1000);
+      nextTimeStr = nextTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+      nextPctValue = nextPct;
+    }
+
+    // Renderizar estructura fija (con IDs) una sola vez para evitar destruir el input
+    dayProgressBody.innerHTML = `
+      <div class="day-progress-current">
+        <div class="day-progress-pct" id="day-progress-current-pct">${currentPct}%</div>
+        <div class="day-progress-label">del día transcurrido</div>
+      </div>
+      <div class="day-progress-next">
+        <div class="day-progress-next-time" id="day-progress-next-time">Próximo cambio: ${nextTimeStr}</div>
+        <div class="day-progress-next-remaining" id="day-progress-next-remaining">En ${formatTimeRemaining(timeToNextChange)}</div>
+        <div class="day-progress-next-pct" id="day-progress-next-pct">Nuevo porcentaje: ${nextPctValue}%</div>
+      </div>
+      <div class="day-progress-target">
+        <div class="day-progress-target-title">Objetivo de Hoy</div>
+        <div class="day-progress-target-input">
+          <label for="day-target-time">Selecciona la hora:</label>
+          <input type="time" id="day-target-time" value="${targetTime || ''}">
+        </div>
+        <div class="day-progress-target-display">
+          <div class="day-progress-target-countdown" id="day-progress-target-countdown">00:00:00</div>
+          <div class="day-progress-target-message" id="day-progress-target-message">Selecciona una hora objetivo.</div>
+        </div>
+      </div>
+    `;
+    dayProgressOverlay.classList.add('open');
+    dayProgressOverlay.setAttribute('aria-hidden', 'false');
+
+    // Agregar listener al input (si existe) — solo una vez por apertura
+    const targetInputOnce = document.getElementById('day-target-time');
+    if (targetInputOnce) {
+      targetInputOnce.addEventListener('input', () => {
+        targetTime = targetInputOnce.value;
+        updateDayProgressModal();
+      });
+    }
+
+    // Iniciar intervalo de actualización en vivo cada segundo (evitar duplicados)
+    if (!dayProgressInterval) dayProgressInterval = setInterval(updateDayProgressModal, 1000);
+    // Actualizar inmediatamente para mostrar todo al abrir
+    updateDayProgressModal();
+  }
+
+  function closeDayProgressModal() {
+    dayProgressOverlay.classList.remove('open');
+    dayProgressOverlay.setAttribute('aria-hidden', 'true');
+    // Limpiar intervalo de actualización en vivo
+    if (dayProgressInterval) {
+      clearInterval(dayProgressInterval);
+      dayProgressInterval = null;
+    }
+  }
+
+  // Event listener en el anillo del día
+  document.querySelector('.progress-ring').addEventListener('click', openDayProgressModal); // El primer .progress-ring
+  dayProgressClose.addEventListener('click', closeDayProgressModal);
+  dayProgressOverlay.addEventListener('click', e => { if (e.target === dayProgressOverlay) closeDayProgressModal(); });
+
   // Toggle panel de filtros
   const filtersToggle = document.getElementById('filters-toggle');
   const filtersPanel  = document.getElementById('filters-panel');
@@ -928,7 +1087,7 @@ function scheduleMinuteTick() {
   });
 
   // Anillo de día: interval independiente para actualización en vivo
-  setInterval(updateDayRing, 60000);
+  setInterval(updateDayRing, 1000);
 
   // Tooltips en tactil
   document.querySelectorAll('.progress-ring[data-tip]').forEach(el => {
@@ -983,9 +1142,11 @@ function renderSubsGroupedByDoneAt(subs) {
 }
 
 const detailOverlay = document.getElementById('detail-overlay');
+const detailPanel   = document.getElementById('detail-panel');
 const detailBody    = document.getElementById('detail-body');
 const detailBack    = document.getElementById('detail-back');
 const detailCloseBtn= document.getElementById('detail-close');
+const detailHandle  = document.getElementById('detail-handle');
 
 function openTaskDetail(id) {
   const t = tasks.find(t => t.id === id);
@@ -993,6 +1154,9 @@ function openTaskDetail(id) {
   subtaskFilter = 'pending';
   detailStack.push(id);
   renderDetailBody(id);
+  detailPanel.style.transform = '';
+  detailPanel.style.transition = '';
+  detailOverlay.style.background = '';
   detailOverlay.classList.add('open');
   detailOverlay.setAttribute('aria-hidden', 'false');
   updateDetailBackBtn();
@@ -1000,6 +1164,9 @@ function openTaskDetail(id) {
 
 function closeTaskDetail() {
   detailStack = [];
+  detailPanel.style.transform = '';
+  detailPanel.style.transition = '';
+  detailOverlay.style.background = '';
   detailOverlay.classList.remove('open');
   detailOverlay.setAttribute('aria-hidden', 'true');
 }
@@ -1018,6 +1185,54 @@ function goBackDetail() {
 function updateDetailBackBtn() {
   detailBack.style.visibility = detailStack.length > 1 ? 'visible' : 'hidden';
 }
+
+function initDetailDrag() {
+  if (!detailPanel || !detailHandle) return;
+  let startY = 0, deltaY = 0, dragging = false;
+  const THRESHOLD = 90;
+
+  const resetOverlay = () => {
+    detailOverlay.style.background = 'rgba(26,16,8,0.55)';
+  };
+
+  const finishDrag = () => {
+    if (!dragging) return;
+    dragging = false;
+    detailPanel.style.transition = 'transform 0.24s ease';
+    if (deltaY >= THRESHOLD) {
+      detailPanel.style.transform = 'translateY(110vh)';
+      detailOverlay.style.transition = 'background 0.24s ease';
+      detailOverlay.style.background = 'rgba(26,16,8,0)';
+      setTimeout(closeTaskDetail, 240);
+    } else {
+      detailPanel.style.transform = '';
+      resetOverlay();
+    }
+  };
+
+  detailHandle.addEventListener('pointerdown', e => {
+    if (!detailOverlay.classList.contains('open') || e.button !== 0) return;
+    detailHandle.setPointerCapture(e.pointerId);
+    startY = e.clientY;
+    deltaY = 0;
+    dragging = true;
+    detailPanel.style.transition = 'none';
+  });
+
+  detailHandle.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    deltaY = e.clientY - startY;
+    if (deltaY < 0) return;
+    e.preventDefault();
+    detailPanel.style.transform = `translateY(${deltaY}px)`;
+    detailOverlay.style.background = `rgba(26,16,8,${Math.max(0, 0.55 - deltaY / 450)})`;
+  });
+
+  detailHandle.addEventListener('pointerup', finishDrag);
+  detailHandle.addEventListener('pointercancel', finishDrag);
+}
+
+initDetailDrag();
 
 function renderDetailBody(id) {
   const t = tasks.find(t => t.id === id);
@@ -1049,7 +1264,9 @@ function renderDetailBody(id) {
     </div>
     <div class="detail-actions-row">
       <button class="detail-action-btn" id="detail-add-subtask"><span class="btn-icon">＋</span> Añadir subtarea</button>
+      <button class="detail-action-btn" id="detail-breakdown-ai"><span class="btn-icon" style="color:var(--gold);">✨</span> Desglosar con IA</button>
       <button class="detail-action-btn" id="detail-edit-task"><span class="btn-icon">✎</span> Editar</button>
+      ${t.repeat ? `<button class="detail-action-btn" id="detail-snooze"><span class="btn-icon">⏰</span> Posponer</button>` : ''}
       <button class="detail-action-btn" id="detail-toggle-done"><span class="btn-icon">${t.done ? '↩' : '✓'}</span> ${t.done ? 'Reabrir' : 'Completar'}</button>
     </div>
     <div>
@@ -1078,6 +1295,13 @@ function renderDetailBody(id) {
     }
     openForm();
   });
+  
+  const btnBreakdown = document.getElementById('detail-breakdown-ai');
+  if (btnBreakdown) {
+    btnBreakdown.addEventListener('click', async () => {
+      await handleAIBreakdown(id, btnBreakdown);
+    });
+  }
   document.getElementById('detail-edit-task').addEventListener('click', () => {
     editTask(id);
   });
@@ -1085,6 +1309,41 @@ function renderDetailBody(id) {
     await toggleDone(id);
     if (detailStack.length) renderDetailBody(detailStack[detailStack.length - 1]);
   });
+
+  // Wire snooze for recurring tasks
+  const snoozeBtn = document.getElementById('detail-snooze');
+  if (snoozeBtn) {
+    snoozeBtn.addEventListener('click', async () => {
+      const task = tasks.find(tt => tt.id === id);
+      if (!task) return;
+      if (!task.repeat) { showToast('No es una tarea recurrente'); return; }
+      const oldDue = task.due || '';
+      const oldDueTime = task.dueTime || '';
+      const next = addRepeat(task.due || todayISO(), task.dueTime || '', task.repeat);
+      task.due = next.due;
+      task.dueTime = next.dueTime || '';
+      task.snoozedDates = task.snoozedDates || [];
+      task.snoozedDates.push(todayISO());
+      await dbPut(task);
+      markDirty();
+      render();
+      renderDetailBody(id);
+      showToast(`⏰ Pospuesta para ${formatDateNice(next.due)}`, {
+        undo: true,
+        onUndo: async () => {
+          task.due = oldDue;
+          task.dueTime = oldDueTime;
+          if (task.snoozedDates && task.snoozedDates.length > 0) {
+            task.snoozedDates.pop();
+          }
+          await dbPut(task);
+          markDirty();
+          render();
+          renderDetailBody(id);
+        }
+      });
+    });
+  }
 
   // Wire subtask filter tabs
   detailBody.querySelectorAll('[data-sf]').forEach(btn => {
@@ -1526,7 +1785,28 @@ function initSettings() {
   secretInput.addEventListener('focus', () => {
     if (secretInput.dataset.saved === '1') { secretInput.value = ''; secretInput.dataset.saved = ''; }
   });
+
+  // ── OpenRouter API Key ──
+  const orInput = document.getElementById('openrouter-key');
+  const orSave  = document.getElementById('openrouter-key-save');
+  dbGetMeta('openRouterKey').then(v => { if (v) { orInput.value = '••••••••'; orInput.dataset.saved = '1'; } });
+  if (orSave) {
+    orSave.addEventListener('click', async () => {
+      const val = orInput.value.trim();
+      if (!val || val === '••••••••') return;
+      await dbSetMeta('openRouterKey', val);
+      orInput.value = '••••••••';
+      orInput.dataset.saved = '1';
+      showToast('✓ Clave de IA guardada');
+    });
+  }
+  if (orInput) {
+    orInput.addEventListener('focus', () => {
+      if (orInput.dataset.saved === '1') { orInput.value = ''; orInput.dataset.saved = ''; }
+    });
+  }
 }
+
 
 // ── Borrar todos los datos ──
 async function clearAllData() {
@@ -1574,6 +1854,11 @@ async function restoreFromPayload(payload) {
   for (const c of incoming.categories) await dbPutCat(c);
   for (const p of await dbGetAllProjects()) await dbDeleteProject(p.id);
   for (const p of incoming.projects)   await dbPutProject(p);
+  
+  if (payload.meta && payload.meta.openRouterKey) {
+    await dbSetMeta('openRouterKey', payload.meta.openRouterKey);
+  }
+
   tasks = await dbGetAll();
   CATS  = { ...CATS_DEFAULT };
   await loadCustomCats();
@@ -1590,15 +1875,18 @@ async function restoreFromPayload(payload) {
 // ── Exportar datos ──
 async function exportData() {
   try {
-    const [taskList, catList, projList] = await Promise.all([
-      dbGetAll(), dbGetAllCats(), dbGetAllProjects()
+    const [taskList, catList, projList, orKey] = await Promise.all([
+      dbGetAll(), dbGetAllCats(), dbGetAllProjects(), dbGetMeta('openRouterKey')
     ]);
     const payload = {
       version: 1,
       exported: new Date().toISOString(),
       tasks: taskList,
       categories: catList,
-      projects: projList
+      projects: projList,
+      meta: {
+        openRouterKey: orKey || null
+      }
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1665,15 +1953,18 @@ async function uploadBackup(silent = false) {
         if (chkData.exists) _backupSha = chkData.sha;
       }
     }
-    const [taskList, catList, projList] = await Promise.all([
-      dbGetAll(), dbGetAllCats(), dbGetAllProjects()
+    const [taskList, catList, projList, orKey] = await Promise.all([
+      dbGetAll(), dbGetAllCats(), dbGetAllProjects(), dbGetMeta('openRouterKey')
     ]);
     const payload = {
       version: 1,
       exported: new Date().toISOString(),
       tasks: taskList,
       categories: catList,
-      projects: projList
+      projects: projList,
+      meta: {
+        openRouterKey: orKey || null
+      }
     };
     const r = await fetch('/api/backup', {
       method: 'POST',
@@ -2225,10 +2516,23 @@ function renderMonthSection() {
   document.getElementById('stats-chart-legend').textContent =
     `1 – ${lastDay} de ${monthName}`;
 
+  let monthSnoozedCount = 0;
+  tasks.forEach(t => {
+    if (t.snoozedDates) {
+      t.snoozedDates.forEach(dStr => {
+        const d = new Date(dStr);
+        if (d.getFullYear() === viewYear && d.getMonth() === viewMonth) monthSnoozedCount++;
+      });
+    }
+  });
+
   document.getElementById('stats-month-done').textContent = monthDone.length;
   document.getElementById('stats-month-high').textContent = monthDone.filter(t => t.pri === 'high').length;
   document.getElementById('stats-month-mid').textContent = monthDone.filter(t => t.pri === 'mid').length;
   document.getElementById('stats-month-low').textContent = monthDone.filter(t => t.pri === 'low').length;
+  const snoozedEl = document.getElementById('stats-month-snoozed');
+  if (snoozedEl) snoozedEl.textContent = monthSnoozedCount;
+
   document.getElementById('stats-month-label').textContent =
     `Completadas en ${new Date(viewYear, viewMonth, 1).toLocaleDateString('es-ES', { month: 'long' })}`;
 
@@ -2433,5 +2737,262 @@ function initStats() {
       closeNav();
       openStats();
     });
+  }
+}
+
+// ══════════════════════════════════════════
+// IA INTEGRATION (OpenRouter)
+// ══════════════════════════════════════════
+
+async function callOpenRouterAPI(prompt, systemMsg, isJson) {
+  const apiKey = await dbGetMeta('openRouterKey');
+  if (!apiKey) {
+    showToast('⚠️ Falta configurar la API Key de OpenRouter en Ajustes');
+    return null;
+  }
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': window.location.href,
+        'X-Title': 'Daily Planner App',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'mistralai/mistral-small-2603',
+        messages: [
+          { role: 'system', content: systemMsg },
+          { role: 'user', content: prompt }
+        ],
+        response_format: isJson ? { type: 'json_object' } : undefined
+      })
+    });
+    if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+    const data = await res.json();
+    return data.choices[0].message.content;
+  } catch (err) {
+    console.error('OpenRouter Error:', err);
+    showToast('✗ Error conectando con la IA');
+    return null;
+  }
+}
+
+// ── Magic Input Logic ──
+const magicInputText = document.getElementById('magic-input-text');
+const btnMagicGen = document.getElementById('btn-magic-generate');
+const magicLoading = document.getElementById('magic-loading');
+
+if (btnMagicGen) {
+  btnMagicGen.addEventListener('click', async () => {
+    const prompt = magicInputText.value.trim();
+    if (!prompt) return;
+
+    btnMagicGen.disabled = true;
+    magicLoading.style.display = 'inline';
+
+    const systemMsg = `Eres un asistente que extrae información de tareas. Devuelve única y estrictamente un objeto JSON con esta estructura:
+{
+  "title": "String, resumen o título corto",
+  "desc": "String opcional, elaboraciones extraídas",
+  "due": "String opcional formato YYYY-MM-DD",
+  "time": "String opcional formato HH:MM (24h)",
+  "pri": "String opcional entre 'low', 'mid', 'high' (por defecto 'mid')"
+}
+No incluyas texto fuera del JSON. Hoy es ${new Date().toISOString().slice(0,10)}`;
+
+    const response = await callOpenRouterAPI(prompt, systemMsg, true);
+    
+    if (response) {
+      try {
+        let jsonStr = response;
+        if (jsonStr.includes('\`\`\`json')) {
+           jsonStr = jsonStr.split('\`\`\`json')[1].split('\`\`\`')[0];
+        } else if (jsonStr.includes('\`\`\`')) {
+           jsonStr = jsonStr.split('\`\`\`')[1].split('\`\`\`')[0];
+        }
+        const data = JSON.parse(jsonStr);
+
+        if (data.title) document.getElementById('new-task').value = data.title;
+        if (data.desc) document.getElementById('new-desc').value = data.desc;
+        if (data.due) document.getElementById('sel-due').value = data.due;
+        if (data.time) document.getElementById('sel-time').value = data.time;
+        if (data.pri) document.getElementById('sel-pri').value = data.pri;
+        
+        magicInputText.value = '';
+        showToast('✨ Formulario rellenado con IA');
+      } catch (e) {
+        console.error('Error parseando JSON IA:', e);
+        showToast('✗ La IA devolvió un formato no reconocido');
+      }
+    }
+    
+    btnMagicGen.disabled = false;
+    magicLoading.style.display = 'none';
+  });
+}
+
+// ── Breakdown Logic ──
+async function handleAIBreakdown(taskId, btnEl) {
+  const t = tasks.find(x => x.id === taskId);
+  if (!t) return;
+  
+  const originalText = btnEl.innerHTML;
+  btnEl.disabled = true;
+  btnEl.innerHTML = '<span class="btn-icon" style="color:var(--gold);">⏳</span> Procesando...';
+
+  const systemMsg = `Eres un organizador de tareas. A partir de una tarea, devuelve única y estrictamente un JSON con un array de strings bajo la clave "subtasks". Ejemplo: { "subtasks": ["Paso 1", "Paso 2"] }. El nivel de desglose debe ser secuencial, directo a la acción.`;
+  const prompt = `Desglosa la tarea principal en pasos viables: "${t.text}". ${t.desc ? 'Contexto de la tarea: ' + t.desc : ''}`;
+
+  const response = await callOpenRouterAPI(prompt, systemMsg, true);
+
+  if (response) {
+      try {
+        let jsonStr = response;
+        if (jsonStr.includes('\`\`\`json')) {
+           jsonStr = jsonStr.split('\`\`\`json')[1].split('\`\`\`')[0];
+        } else if (jsonStr.includes('\`\`\`')) {
+           jsonStr = jsonStr.split('\`\`\`')[1].split('\`\`\`')[0];
+        }
+        const data = JSON.parse(jsonStr);
+        if (data.subtasks && Array.isArray(data.subtasks)) {
+           for (const sub of data.subtasks) {
+               const newSub = {
+                 id: 't_' + Date.now() + Math.floor(Math.random()*1000),
+                 text: sub,
+                 done: false,
+                 createdAt: todayISO(),
+                 createdTime: new Date().toLocaleTimeString('en-GB'),
+                 parentId: taskId
+               };
+               tasks.push(newSub);
+               await dbPut(newSub);
+               // Add tiny delay to ensure timestamps/ids are ordered
+               await new Promise(r => setTimeout(r, 10));
+           }
+           renderDetailBody(taskId);
+           markDirty();
+           render();
+           showToast('✨ Desglose completado');
+        }
+      } catch(e) {
+        console.error('Error parseando JSON desglose:', e);
+        showToast('✗ La IA devolvió un formato no válido');
+      }
+  }
+
+  btnEl.disabled = false;
+  btnEl.innerHTML = originalText;
+}
+
+// ── Snooze Granular History Logic ──
+const snoozeDetailOverlay = document.getElementById('snooze-detail-overlay');
+const btnSnoozeDetail = document.getElementById('btn-snooze-detail');
+const snoozeDetailClose = document.getElementById('snooze-detail-close');
+const snoozeDetailBody = document.getElementById('snooze-detail-body');
+
+if (btnSnoozeDetail && snoozeDetailOverlay) {
+  btnSnoozeDetail.addEventListener('click', () => {
+    snoozeDetailOverlay.classList.add('open');
+    snoozeDetailOverlay.setAttribute('aria-hidden', 'false');
+    renderSnoozeGranularDetail();
+  });
+
+  snoozeDetailClose.addEventListener('click', () => {
+    snoozeDetailOverlay.classList.remove('open');
+    snoozeDetailOverlay.setAttribute('aria-hidden', 'true');
+  });
+
+  snoozeDetailOverlay.addEventListener('click', (e) => {
+    if (e.target === snoozeDetailOverlay) {
+      snoozeDetailOverlay.classList.remove('open');
+      snoozeDetailOverlay.setAttribute('aria-hidden', 'true');
+    }
+  });
+
+  function renderSnoozeGranularDetail() {
+    const today = new Date();
+    // Assuming _statsMonthOffset is globally accessible from stats module
+    const offset = typeof _statsMonthOffset !== 'undefined' ? _statsMonthOffset : 0;
+    const viewYear  = today.getFullYear() + Math.floor((today.getMonth() + offset) / 12);
+    const viewMonth = ((today.getMonth() + offset) % 12 + 12) % 12;
+
+    let historyItems = [];
+    tasks.forEach(t => {
+      if (t.snoozedDates && t.snoozedDates.length > 0) {
+        let countInMonth = 0;
+        t.snoozedDates.forEach(dStr => {
+          const d = new Date(dStr);
+          if (d.getFullYear() === viewYear && d.getMonth() === viewMonth) countInMonth++;
+        });
+        if (countInMonth > 0) {
+          historyItems.push({ task: t, count: countInMonth });
+        }
+      }
+    });
+
+    historyItems.sort((a, b) => b.count - a.count); // sort by highest snoozed first
+
+    if (historyItems.length === 0) {
+      snoozeDetailBody.innerHTML = '<div class="detail-no-subtasks" style="text-align:center; margin-top:20px; color:var(--text-muted);">No hay tareas pospuestas este mes.</div>';
+    } else {
+      let html = '';
+      historyItems.forEach(item => {
+        const t = item.task;
+        // Fallback safely if escHtml is not in global scope
+        const safeTitle = typeof escHtml === 'function' ? escHtml(t.text) : t.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        
+        let metaHtml = '';
+        if (typeof getTaskCats === 'function' && typeof CATS !== 'undefined') {
+          const taskCats = getTaskCats(t);
+          metaHtml += taskCats.map(key => {
+            const c = CATS[key] || CATS.otro;
+            return `<span class="tag"><span class="tag-dot" style="background:${c.color}"></span>${c.label}</span>`;
+          }).join('');
+        }
+        if (typeof getProjectBadge === 'function') metaHtml += getProjectBadge(t);
+        if (typeof getPriLabel === 'function') metaHtml += getPriLabel(t.pri);
+        if (typeof getDueBadge === 'function') metaHtml += getDueBadge(t);
+        
+        html += `
+          <div class="snooze-item">
+            <div class="snooze-item-top">
+              <div class="snooze-item-title">${safeTitle}</div>
+              <div class="snooze-item-badge">x${item.count}</div>
+            </div>
+            ${metaHtml ? `<div class="snooze-item-meta">${metaHtml}</div>` : ''}
+          </div>
+        `;
+      });
+      snoozeDetailBody.innerHTML = html;
+    }
+  }
+}
+
+// ── Toggle Magic Input Logic ──
+const btnToggleMagic = document.getElementById('btn-toggle-magic');
+const magicInputWrap = document.getElementById('magic-input-wrap');
+
+if (btnToggleMagic && magicInputWrap) {
+  // Toggle listener
+  btnToggleMagic.addEventListener('click', (e) => {
+    e.preventDefault();
+    magicInputWrap.classList.toggle('hidden');
+    if (!magicInputWrap.classList.contains('hidden')) {
+      document.getElementById('magic-input-text').focus();
+    }
+  });
+
+  // Re-hide when form opens to start clean by overriding the original function slightly
+  const originalOpenForm = typeof openForm === 'function' ? openForm : null;
+  if (originalOpenForm && !window.__magicPatched) {
+    window.__magicPatched = true;
+    window.openForm = function(initialCat) {
+      if (magicInputWrap) magicInputWrap.classList.add('hidden');
+      if (document.getElementById('magic-input-text')) {
+          document.getElementById('magic-input-text').value = '';
+      }
+      return originalOpenForm(initialCat);
+    };
   }
 }

@@ -61,7 +61,8 @@
 
 <!-- Task detail modal -->
 <div class="detail-overlay" id="detail-overlay" aria-hidden="true">
-  <div class="detail-panel">
+  <div class="detail-panel" id="detail-panel">
+    <div class="detail-handle" id="detail-handle" aria-hidden="true"></div>
     <div class="detail-header">
       <button class="detail-back" id="detail-back" title="Volver">←</button>
       <span class="detail-header-title">Detalle de tarea</span>
@@ -82,6 +83,32 @@
     <div class="sync-modal-actions">
       <button class="sync-modal-btn sync-modal-btn-secondary" id="sync-keep-local">Continuar con datos locales</button>
       <button class="sync-modal-btn sync-modal-btn-primary" id="sync-restore">↓ Restaurar backup</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de progreso del día -->
+<div class="day-progress-overlay" id="day-progress-overlay" aria-hidden="true">
+  <div class="day-progress-modal">
+    <div class="day-progress-header">
+      <h2>Progreso del día</h2>
+      <button class="day-progress-close" id="day-progress-close">✕</button>
+    </div>
+    <div class="day-progress-body" id="day-progress-body">
+      <!-- Contenido dinámico -->
+    </div>
+  </div>
+</div>
+
+<!-- Modal de detalle de tareas pospuestas -->
+<div class="snooze-detail-overlay" id="snooze-detail-overlay" aria-hidden="true">
+  <div class="snooze-detail-modal">
+    <div class="snooze-detail-header">
+      <h2>Historial de Pospuestas</h2>
+      <button class="snooze-detail-close" id="snooze-detail-close">✕</button>
+    </div>
+    <div class="snooze-detail-body" id="snooze-detail-body">
+      <!-- Contenido dinámico -->
     </div>
   </div>
 </div>

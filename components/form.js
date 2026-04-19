@@ -27,11 +27,25 @@ document.getElementById('form-mount').innerHTML = `
 
   <div class="form-overlay" id="form-overlay">
     <div class="form-modal">
-      <div class="form-modal-header">
-        <span class="form-modal-title">Nueva tarea</span>
+      <div class="form-modal-header" style="display: flex; align-items: center;">
+        <span class="form-modal-title" style="flex:1;">Nueva tarea</span>
+        <button id="btn-toggle-magic" class="btn-toggle-magic" title="Abrir entrada inteligencia artificial">✨ IA</button>
         <button class="form-modal-close" id="form-close" title="Cerrar">✕</button>
       </div>
       <div class="form-card">
+        
+        <!-- Magic Input IA -->
+        <div class="form-magic-input-wrap hidden" id="magic-input-wrap">
+          <textarea id="magic-input-text" placeholder="Escribe tu tarea (ej. 'Comprar despensa hoy a las 5pm')" rows="2"></textarea>
+          <div class="form-magic-actions">
+            <button type="button" id="btn-magic-generate" class="btn-magic" title="Rellenar usando IA">
+              Generar 🪄
+            </button>
+            <span class="magic-loading" id="magic-loading" style="display:none;">⏳ Extrayendo...</span>
+          </div>
+        </div>
+        <!-- Fin Magic Input IA -->
+
         <div class="form-top">
           <div class="add-icon">＋</div>
           <input type="text" id="new-task" placeholder="Título de la tarea..." autocomplete="off" />

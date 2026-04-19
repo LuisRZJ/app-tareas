@@ -110,6 +110,14 @@ document.getElementById('stats-mount').innerHTML = `
                 <span class="stats-card-label">Baja</span>
               </div>
             </div>
+            
+            <div class="stats-card stats-card-pri" id="btn-snooze-detail" style="border: 1px dashed var(--border); cursor: pointer; transition: background 0.2s;" title="Ver detalle de tareas pospuestas" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='var(--bg2)'">
+              <span class="stats-pri-dot" style="background:var(--gold);"></span>
+              <div class="stats-card-info">
+                <span class="stats-card-value" id="stats-month-snoozed">0</span>
+                <span class="stats-card-label">Pospuestas</span>
+              </div>
+            </div>
           </div>
           <div id="stats-breakdown-month"></div>
         </section>

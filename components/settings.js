@@ -143,6 +143,24 @@ document.getElementById('settings-mount').innerHTML = `
           </div>
         </section>
 
+        <!-- Sección: Inteligencia Artificial -->
+        <section class="settings-section">
+          <div class="settings-section-head">
+            <span class="settings-section-icon">✨</span>
+            <h2 class="settings-section-title">Inteligencia Artificial</h2>
+          </div>
+          <p class="settings-section-desc">Configura tu clave de API para habilitar funciones inteligentes como desglose de tareas y captura mágica.</p>
+
+          <div class="settings-field">
+            <label class="settings-label" for="openrouter-key">API Key de OpenRouter</label>
+            <div class="cloud-secret-row">
+              <input class="settings-input" id="openrouter-key" type="password" placeholder="sk-or-v1-..." autocomplete="off"/>
+              <button class="settings-data-btn cloud-secret-save" id="openrouter-key-save" title="Guardar clave API">✓</button>
+            </div>
+            <span class="settings-section-desc" style="margin-top:2px">Tus claves se guardan solo en tu dispositivo y se sincronizan en tu backup.</span>
+          </div>
+        </section>
+
       </div>
     </div>
 
