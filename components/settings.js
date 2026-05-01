@@ -143,6 +143,24 @@ document.getElementById('settings-mount').innerHTML = `
           </div>
         </section>
 
+        <!-- Sección: Métricas -->
+        <section class="settings-section">
+          <div class="settings-section-head">
+            <span class="settings-section-icon">◑</span>
+            <h2 class="settings-section-title">Métricas de rendimiento</h2>
+          </div>
+          <p class="settings-section-desc">Marca qué categorías representan trabajo profundo (Maker). Las demás se considerarán operativas (Manager). Esto activa el Factor de Impacto en Estadística.</p>
+          <div class="settings-field">
+            <label class="settings-label">Categorías Maker (trabajo profundo)</label>
+            <div class="maker-cats-grid" id="maker-cats-grid">
+              <!-- Relleno por JS -->
+            </div>
+          </div>
+          <div class="settings-data-actions" style="margin-top:10px">
+            <button class="settings-data-btn" id="maker-cats-save">✓ Guardar configuración</button>
+          </div>
+        </section>
+
         <!-- Sección: Inteligencia Artificial -->
         <section class="settings-section">
           <div class="settings-section-head">

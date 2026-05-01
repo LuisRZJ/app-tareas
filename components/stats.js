@@ -24,10 +24,27 @@ document.getElementById('stats-mount').innerHTML = `
             <div class="stats-metric">
               <span class="stats-metric-value" id="stats-days-since">—</span>
               <span class="stats-metric-label">Días desde la primera tarea</span>
+              <span class="stats-card-sub" id="stats-days-since-date"></span>
             </div>
-            <div class="stats-metric">
+            <div class="stats-metric" id="stats-streak-card" style="cursor:pointer" title="Ver historial de rachas">
               <span class="stats-metric-value" id="stats-streak">—</span>
               <span class="stats-metric-label">Semanas de racha</span>
+              <span class="stats-card-sub" id="stats-streak-since"></span>
+            </div>
+          </div>
+          <!-- Historial de rachas -->
+          <div class="stats-streak-history hidden" id="stats-streak-history"></div>
+          <!-- Cycle Time global -->
+          <div class="stats-metrics-row">
+            <div class="stats-metric">
+              <span class="stats-metric-value" id="stats-cycletime-global">—</span>
+              <span class="stats-metric-label">Días promedio por tarea</span>
+              <span class="stats-card-sub" id="stats-cycletime-global-sub"></span>
+            </div>
+            <div class="stats-metric">
+              <span class="stats-metric-value" id="stats-impact-global">—</span>
+              <span class="stats-metric-label">Factor de impacto</span>
+              <span class="stats-card-sub" id="stats-impact-global-sub"></span>
             </div>
           </div>
         </section>
@@ -116,10 +133,58 @@ document.getElementById('stats-mount').innerHTML = `
               <div class="stats-card-info">
                 <span class="stats-card-value" id="stats-month-snoozed">0</span>
                 <span class="stats-card-label">Pospuestas</span>
+                <span class="stats-card-sub" id="stats-month-snoozed-pct"></span>
               </div>
             </div>
           </div>
           <div id="stats-breakdown-month"></div>
+
+          <!-- Rendimiento del mes -->
+          <div class="stats-section-head" style="margin-top:4px">
+            <span class="stats-section-icon">◑</span>
+            <h2 class="stats-section-title">Rendimiento</h2>
+          </div>
+
+          <!-- Win Rate -->
+          <div class="stats-perf-card" id="stats-winrate-card">
+            <div class="stats-perf-header">
+              <span class="stats-perf-title">Win Rate de Ejecución</span>
+              <span class="stats-perf-value" id="stats-winrate">—</span>
+            </div>
+            <div class="stats-perf-bar-track">
+              <div class="stats-perf-bar-fill" id="stats-winrate-bar" style="width:0%"></div>
+            </div>
+            <div class="stats-perf-sub" id="stats-winrate-sub"></div>
+          </div>
+
+          <!-- Cycle Time mensual -->
+          <div class="stats-metrics-row">
+            <div class="stats-metric">
+              <span class="stats-metric-value" id="stats-cycletime-month">—</span>
+              <span class="stats-metric-label">Cycle Time (mes)</span>
+              <span class="stats-card-sub" id="stats-cycletime-month-sub"></span>
+            </div>
+          </div>
+
+          <!-- Drawdown sparkline (integrado en tarjeta de pospuestas) -->
+          <div class="stats-drawdown-wrap" id="stats-drawdown-wrap">
+            <div class="stats-break-head">Drawdown · Pospuestas por semana</div>
+            <div class="stats-sparkline" id="stats-drawdown-sparkline"></div>
+            <div class="stats-perf-sub" id="stats-drawdown-sub"></div>
+          </div>
+
+          <!-- Factor de Impacto -->
+          <div class="stats-perf-card" id="stats-impact-card">
+            <div class="stats-perf-header">
+              <span class="stats-perf-title">Factor de Impacto</span>
+              <span class="stats-perf-value" id="stats-impact-ratio">—</span>
+            </div>
+            <div class="stats-perf-bar-track">
+              <div class="stats-perf-bar-fill stats-perf-bar-impact" id="stats-impact-bar" style="width:0%"></div>
+            </div>
+            <div class="stats-perf-sub" id="stats-impact-sub">Configura las categorías Maker en Ajustes → Métricas</div>
+          </div>
+
         </section>
 
       </div>

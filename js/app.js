@@ -239,12 +239,27 @@ function getDueStatus(dateStr, timeStr) {
 }
 function addRepeat(dateStr, timeStr, repeatVal) {
   if (!repeatVal) return { due: dateStr, dueTime: timeStr };
+  const repStr = String(repeatVal);
+
+  // ── Días de la semana ──
+  if (repStr.startsWith('dw:')) {
+    const allowedDays = repStr.slice(3).split(',').map(Number).filter(x => !isNaN(x) && x >= 0 && x <= 6);
+    if (!allowedDays.length) return { due: dateStr, dueTime: timeStr };
+    const d = new Date(dateStr + 'T12:00:00');
+    d.setDate(d.getDate() + 1); // avanzar al menos un día
+    for (let i = 0; i < 7; i++) {
+      if (allowedDays.includes(d.getDay())) break;
+      d.setDate(d.getDate() + 1);
+    }
+    return { due: d.toISOString().slice(0, 10), dueTime: timeStr || '' };
+  }
+
   let n, unit;
-  if (String(repeatVal).includes(':')) {
-    [n, unit] = String(repeatVal).split(':');
+  if (repStr.includes(':')) {
+    [n, unit] = repStr.split(':');
     n = Number(n);
   } else {
-    n = Number(repeatVal); unit = 'd';
+    n = Number(repStr); unit = 'd';
   }
   if (unit === 'h') {
     const [h, m] = (timeStr || '00:00').split(':').map(Number);
@@ -264,9 +279,19 @@ function addRepeat(dateStr, timeStr, repeatVal) {
 }
 function formatRepeat(repeatVal) {
   if (!repeatVal) return '';
+  const repStr = String(repeatVal);
+
+  // ── Días de la semana ──
+  if (repStr.startsWith('dw:')) {
+    const dayLabels = ['D','L','M','X','J','V','S']; // índice = getDay()
+    const days = repStr.slice(3).split(',').map(Number).filter(x => !isNaN(x) && x >= 0 && x <= 6);
+    if (!days.length) return '';
+    return days.map(d => dayLabels[d]).join(' ');
+  }
+
   let n, unit;
-  if (String(repeatVal).includes(':')) { [n, unit] = String(repeatVal).split(':'); n = Number(n); }
-  else { n = Number(repeatVal); unit = 'd'; }
+  if (repStr.includes(':')) { [n, unit] = repStr.split(':'); n = Number(n); }
+  else { n = Number(repStr); unit = 'd'; }
   const labels = { h: n===1?'hora':'horas', d: n===1?'día':'días', w: n===1?'semana':'semanas', m: n===1?'mes':'meses', y: n===1?'año':'años' };
   return `cada ${n} ${labels[unit] || unit}`;
 }
@@ -295,6 +320,14 @@ async function saveTasks() {
 async function loadTasks() {
   tasks = await dbGetAll();
   tasks.sort((a, b) => b.id - a.id);
+  // Migración: tareas done sin doneAt (creadas antes de que se añadiera el campo)
+  const toMigrate = tasks.filter(t => t.done && !t.doneAt);
+  if (toMigrate.length) {
+    for (const t of toMigrate) {
+      t.doneAt = t.due || new Date(t.id).toISOString().slice(0, 10);
+      await dbPut(t);
+    }
+  }
 }
 
 // ── CRUD ──
@@ -311,7 +344,16 @@ async function addTask() {
   const dueTime = due ? (document.getElementById('sel-time').value || '') : '';
   const repeatN    = document.getElementById('sel-repeat-n').value.trim();
   const repeatUnit  = document.getElementById('sel-repeat-unit').value;
-  const repeat      = (due && repeatUnit && repeatN) ? (repeatN + ':' + repeatUnit) : '';
+  let repeat = '';
+  if (due && repeatUnit) {
+    if (repeatUnit === 'dw') {
+      const activeDays = [...document.querySelectorAll('#repeat-days-picker .day-btn.active')]
+        .map(b => b.dataset.day).join(',');
+      if (activeDays) repeat = 'dw:' + activeDays;
+    } else if (repeatN) {
+      repeat = repeatN + ':' + repeatUnit;
+    }
+  }
 
   if (editingId !== null) {
     const t = tasks.find(t => t.id === editingId);
@@ -1472,6 +1514,7 @@ function closeForm() {
   document.getElementById('sel-time').value = '';
   document.getElementById('sel-repeat-n').value = '';
   document.getElementById('sel-repeat-unit').value = '';
+  document.querySelectorAll('#repeat-days-picker .day-btn').forEach(b => b.classList.remove('active'));
   setCatSelectValues([]);
   setProjSelectValue('');
   syncRepeatN();
@@ -1491,12 +1534,22 @@ function editTask(id) {
   document.getElementById('sel-time').value = t.dueTime || '';
   setProjSelectValue(t.project || '');
   if (t.repeat) {
-    const parts = String(t.repeat).includes(':') ? String(t.repeat).split(':') : [String(t.repeat), 'd'];
-    document.getElementById('sel-repeat-n').value = parts[0];
-    document.getElementById('sel-repeat-unit').value = parts[1];
+    const repStr = String(t.repeat);
+    if (repStr.startsWith('dw:')) {
+      document.getElementById('sel-repeat-unit').value = 'dw';
+      const activeDays = repStr.slice(3).split(',').map(s => s.trim());
+      document.querySelectorAll('#repeat-days-picker .day-btn').forEach(b => {
+        b.classList.toggle('active', activeDays.includes(b.dataset.day));
+      });
+    } else {
+      const parts = repStr.includes(':') ? repStr.split(':') : [repStr, 'd'];
+      document.getElementById('sel-repeat-n').value = parts[0];
+      document.getElementById('sel-repeat-unit').value = parts[1];
+    }
   } else {
     document.getElementById('sel-repeat-n').value = '';
     document.getElementById('sel-repeat-unit').value = '';
+    document.querySelectorAll('#repeat-days-picker .day-btn').forEach(b => b.classList.remove('active'));
   }
   syncRepeatN();
   document.querySelector('.form-modal-title').textContent = 'Editar tarea';
@@ -1530,12 +1583,26 @@ document.querySelectorAll('.nav-fab-item[data-nav]').forEach(btn => {
 });
 function syncRepeatN() {
   const n = document.getElementById('sel-repeat-n');
-  const hasUnit = !!document.getElementById('sel-repeat-unit').value;
-  n.disabled = !hasUnit;
-  if (!hasUnit) n.value = '';
+  const unit = document.getElementById('sel-repeat-unit').value;
+  const isDw = unit === 'dw';
+  const hasUnit = !!unit;
+  const picker = document.getElementById('repeat-days-picker');
+
+  n.disabled = !hasUnit || isDw;
+  if (!hasUnit || isDw) n.value = '';
+  if (picker) picker.classList.toggle('hidden', !isDw);
 }
 document.getElementById('sel-repeat-unit').addEventListener('change', syncRepeatN);
 syncRepeatN();
+
+// ── Day-picker toggle ──
+const repeatDaysPicker = document.getElementById('repeat-days-picker');
+if (repeatDaysPicker) {
+  repeatDaysPicker.addEventListener('click', e => {
+    const btn = e.target.closest('.day-btn');
+    if (btn) btn.classList.toggle('active');
+  });
+}
 
 formClose.addEventListener('click', closeForm);
 formOverlay.addEventListener('click', e => { if (e.target === formOverlay) closeForm(); });
@@ -1629,7 +1696,7 @@ function closeSettings() {
   hideCatForm();
 }
 
-function initSettings() {
+async function initSettings() {
   settingsOverlay = document.getElementById('settings-overlay');
   catForm    = document.getElementById('settings-cat-form');
   addCatBtn  = document.getElementById('settings-add-cat-btn');
@@ -1805,6 +1872,34 @@ function initSettings() {
       if (orInput.dataset.saved === '1') { orInput.value = ''; orInput.dataset.saved = ''; }
     });
   }
+
+  // ── Maker / Manager categories ──
+  const makerGrid = document.getElementById('maker-cats-grid');
+  const makerSave = document.getElementById('maker-cats-save');
+  if (makerGrid) {
+    const saved = await dbGetMeta('makerCategories').catch(() => null) || [];
+    makerGrid.innerHTML = Object.entries(CATS).map(([key, cat]) => {
+      const active = saved.includes(key) ? 'active' : '';
+      const safeIcon = Array.from(cat.label.trim())[0] || '';
+      const safeName = cat.label.trim().substring(safeIcon.length).trim();
+      return `<button type="button" class="maker-cat-btn ${active}" data-key="${key}"
+        style="--cat-color:${cat.color}" title="${cat.label}">
+        <span class="maker-cat-icon">${safeIcon}</span>
+        <span class="maker-cat-name">${safeName}</span>
+      </button>`;
+    }).join('');
+    makerGrid.addEventListener('click', e => {
+      const btn = e.target.closest('.maker-cat-btn');
+      if (btn) btn.classList.toggle('active');
+    });
+  }
+  if (makerSave) {
+    makerSave.addEventListener('click', async () => {
+      const selected = [...document.querySelectorAll('.maker-cat-btn.active')].map(b => b.dataset.key);
+      await dbSetMeta('makerCategories', selected);
+      showToast('✓ Configuración de métricas guardada');
+    });
+  }
 }
 
 
@@ -1855,8 +1950,13 @@ async function restoreFromPayload(payload) {
   for (const p of await dbGetAllProjects()) await dbDeleteProject(p.id);
   for (const p of incoming.projects)   await dbPutProject(p);
   
-  if (payload.meta && payload.meta.openRouterKey) {
-    await dbSetMeta('openRouterKey', payload.meta.openRouterKey);
+  if (payload.meta) {
+    if (payload.meta.openRouterKey) {
+      await dbSetMeta('openRouterKey', payload.meta.openRouterKey);
+    }
+    if (Array.isArray(payload.meta.makerCategories)) {
+      await dbSetMeta('makerCategories', payload.meta.makerCategories);
+    }
   }
 
   tasks = await dbGetAll();
@@ -1875,8 +1975,9 @@ async function restoreFromPayload(payload) {
 // ── Exportar datos ──
 async function exportData() {
   try {
-    const [taskList, catList, projList, orKey] = await Promise.all([
-      dbGetAll(), dbGetAllCats(), dbGetAllProjects(), dbGetMeta('openRouterKey')
+    const [taskList, catList, projList, orKey, makerCats] = await Promise.all([
+      dbGetAll(), dbGetAllCats(), dbGetAllProjects(), dbGetMeta('openRouterKey'),
+      dbGetMeta('makerCategories')
     ]);
     const payload = {
       version: 1,
@@ -1885,7 +1986,8 @@ async function exportData() {
       categories: catList,
       projects: projList,
       meta: {
-        openRouterKey: orKey || null
+        openRouterKey: orKey || null,
+        makerCategories: makerCats || []
       }
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -1953,8 +2055,9 @@ async function uploadBackup(silent = false) {
         if (chkData.exists) _backupSha = chkData.sha;
       }
     }
-    const [taskList, catList, projList, orKey] = await Promise.all([
-      dbGetAll(), dbGetAllCats(), dbGetAllProjects(), dbGetMeta('openRouterKey')
+    const [taskList, catList, projList, orKey, makerCats] = await Promise.all([
+      dbGetAll(), dbGetAllCats(), dbGetAllProjects(), dbGetMeta('openRouterKey'),
+      dbGetMeta('makerCategories')
     ]);
     const payload = {
       version: 1,
@@ -1963,7 +2066,8 @@ async function uploadBackup(silent = false) {
       categories: catList,
       projects: projList,
       meta: {
-        openRouterKey: orKey || null
+        openRouterKey: orKey || null,
+        makerCategories: makerCats || []
       }
     };
     const r = await fetch('/api/backup', {
@@ -2427,7 +2531,7 @@ function closeStats() {
   statsOverlay.setAttribute('aria-hidden', 'true');
 }
 
-function renderStats() {
+async function renderStats() {
   const done = tasks.filter(t => t.done);
 
   // ── Global metrics ──
@@ -2436,24 +2540,95 @@ function renderStats() {
   document.getElementById('stats-pri-mid').textContent = done.filter(t => t.pri === 'mid').length;
   document.getElementById('stats-pri-low').textContent = done.filter(t => t.pri === 'low').length;
 
-  // Days since first task (use task.time creation time; fallback to due date)
+  // Days since first task (use task.id as creation timestamp)
   const allTimes = tasks.map(t => t.id).filter(Boolean);
+  const daysSinceDateEl = document.getElementById('stats-days-since-date');
   if (allTimes.length) {
     const firstMs = Math.min(...allTimes);
     const daysSince = Math.floor((Date.now() - firstMs) / 86400000);
     document.getElementById('stats-days-since').textContent = daysSince;
+    if (daysSinceDateEl) {
+      const firstDate = new Date(firstMs);
+      daysSinceDateEl.textContent = firstDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
+    }
   } else {
     document.getElementById('stats-days-since').textContent = '—';
+    if (daysSinceDateEl) daysSinceDateEl.textContent = 'Sin tareas aún';
   }
 
   // Weekly streak: count consecutive weeks (ending this week) with ≥1 completion
-  const streak = calcWeekStreak(done);
+  const { count: streak, startDate: streakStart } = calcWeekStreak(done);
   document.getElementById('stats-streak').textContent = streak;
+  const streakSinceEl = document.getElementById('stats-streak-since');
+  if (streakSinceEl) {
+    if (streak > 0 && streakStart) {
+      streakSinceEl.textContent = 'desde el ' + streakStart.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
+    } else {
+      streakSinceEl.textContent = 'Sin racha activa';
+    }
+  }
+
+  // Historial de rachas
+  const allStreaks = calcAllStreaks(done);
+  const historyEl = document.getElementById('stats-streak-history');
+  const streakCard = document.getElementById('stats-streak-card');
+  if (historyEl) {
+    if (allStreaks.length <= 1) {
+      // Solo hay una racha (la actual o ninguna): no tiene sentido mostrar historial
+      historyEl.classList.add('hidden');
+      if (streakCard) streakCard.style.cursor = 'default';
+    } else {
+      const currentIso = isoWeek(new Date());
+      historyEl.innerHTML = `<div class="streak-history-title">Historial de rachas</div>` +
+        allStreaks.map((s, i) => {
+          const startMon = isoWeekToMonday(s.start);
+          const endMon   = isoWeekToMonday(s.end);
+          // End label: last day of that week (Sunday)
+          const endSun = new Date(endMon); endSun.setDate(endMon.getDate() + 6);
+          const isActive = s.end === currentIso || s.end >= currentIso;
+          const badge = isActive ? '<span class="streak-badge-active">activa</span>' : '';
+          const best  = i === 0 && !isActive ? '<span class="streak-badge-best">récord</span>' : '';
+          const dateRange = startMon.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) +
+            ' – ' + endSun.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+          return `<div class="streak-history-row">
+            <span class="streak-history-weeks">${s.weeks} sem.</span>
+            <span class="streak-history-range">${dateRange}</span>
+            <span>${badge}${best}</span>
+          </div>`;
+        }).join('');
+      if (streakCard) {
+        streakCard.style.cursor = 'pointer';
+        streakCard.onclick = () => historyEl.classList.toggle('hidden');
+      }
+    }
+  }
 
   renderBreakdown(done, 'total');
 
+  // ── Global Cycle Time ──
+  const globalCycle = calcCycleTime(done);
+  const ctGlobalEl = document.getElementById('stats-cycletime-global');
+  const ctGlobalSubEl = document.getElementById('stats-cycletime-global-sub');
+  if (ctGlobalEl) ctGlobalEl.textContent = globalCycle !== null ? globalCycle + ' d' : '—';
+  if (ctGlobalSubEl) ctGlobalSubEl.textContent = globalCycle !== null ? 'desde creación hasta done' : 'Sin datos aún';
+
+  // ── Global Impact Factor ──
+  const makerCats = await dbGetMeta('makerCategories').catch(() => null) || [];
+  const impGlobal = calcImpactFactor(done, makerCats);
+  const impGlobalEl = document.getElementById('stats-impact-global');
+  const impGlobalSubEl = document.getElementById('stats-impact-global-sub');
+  if (impGlobalEl) {
+    if (impGlobal) {
+      impGlobalEl.textContent = impGlobal.pct + '%';
+      if (impGlobalSubEl) impGlobalSubEl.textContent = `${impGlobal.maker} Maker · ${impGlobal.manager} Manager`;
+    } else {
+      impGlobalEl.textContent = '—';
+      if (impGlobalSubEl) impGlobalSubEl.textContent = makerCats.length ? 'Sin tareas' : 'Configura en Ajustes → Métricas';
+    }
+  }
+
   // ── Month section ──
-  renderMonthSection();
+  await renderMonthSection();
 }
 
 function calcWeekStreak(done) {
@@ -2464,16 +2639,72 @@ function calcWeekStreak(done) {
     const d = new Date(t.due + 'T00:00:00');
     weeksWithDone.add(isoWeek(d));
   }
-  // Walk backwards from current week
-  let streak = 0;
+  // Walk backwards from current week, count streak and find start Monday
+  let count = 0;
+  let startDate = null;
   const cursor = new Date();
   while (true) {
     const wk = isoWeek(cursor);
     if (!weeksWithDone.has(wk)) break;
-    streak++;
+    count++;
+    // Record the Monday of this week as new (earlier) start
+    const monday = new Date(cursor);
+    const dayOfWeek = monday.getDay() || 7;
+    monday.setDate(monday.getDate() - (dayOfWeek - 1));
+    startDate = new Date(monday);
     cursor.setDate(cursor.getDate() - 7);
   }
-  return streak;
+  return { count, startDate };
+}
+
+function calcAllStreaks(done) {
+  // Build sorted array of unique ISO weeks with completions
+  const weekSet = new Set();
+  for (const t of done) {
+    if (!t.due) continue;
+    weekSet.add(isoWeek(new Date(t.due + 'T00:00:00')));
+  }
+  if (!weekSet.size) return [];
+
+  // Sort weeks chronologically
+  const sortedWeeks = [...weekSet].sort();
+
+  // Group into consecutive runs
+  const streaks = [];
+  let runStart = sortedWeeks[0];
+  let runEnd   = sortedWeeks[0];
+  let runLen   = 1;
+
+  for (let i = 1; i < sortedWeeks.length; i++) {
+    const prev = sortedWeeks[i - 1];
+    const curr = sortedWeeks[i];
+    // Check if curr is exactly one week after prev
+    const prevDate = isoWeekToMonday(prev);
+    prevDate.setDate(prevDate.getDate() + 7);
+    const expectedNext = isoWeek(prevDate);
+    if (curr === expectedNext) {
+      runEnd = curr;
+      runLen++;
+    } else {
+      streaks.push({ start: runStart, end: runEnd, weeks: runLen });
+      runStart = curr; runEnd = curr; runLen = 1;
+    }
+  }
+  streaks.push({ start: runStart, end: runEnd, weeks: runLen });
+
+  // Sort descending by length, then by recency
+  return streaks.sort((a, b) => b.weeks - a.weeks || b.end.localeCompare(a.end));
+}
+
+function isoWeekToMonday(isoWeekStr) {
+  // e.g. '2026-W18' -> Date of that Monday
+  const [yearStr, wStr] = isoWeekStr.split('-W');
+  const year = Number(yearStr), week = Number(wStr);
+  const jan4 = new Date(year, 0, 4); // Jan 4 is always in week 1
+  const dayOfWeek = jan4.getDay() || 7;
+  const monday = new Date(jan4);
+  monday.setDate(jan4.getDate() - (dayOfWeek - 1) + (week - 1) * 7);
+  return monday;
 }
 
 function isoWeek(d) {
@@ -2486,7 +2717,62 @@ function isoWeek(d) {
   return `${year}-W${String(week).padStart(2, '0')}`;
 }
 
-function renderMonthSection() {
+// ─── Métricas de rendimiento ─────────────────────────────────────────────────
+
+/** Win Rate: tareas con due en el mes completadas ese mismo día / total planificadas */
+function calcWinRate(allTasks, viewYear, viewMonth) {
+  const planned = allTasks.filter(t => {
+    if (!t.due) return false;
+    const d = new Date(t.due + 'T00:00:00');
+    return d.getFullYear() === viewYear && d.getMonth() === viewMonth;
+  });
+  if (!planned.length) return null;
+  const completedOnTime = planned.filter(t => t.done && t.doneAt === t.due);
+  return Math.round(completedOnTime.length / planned.length * 100);
+}
+
+/** Cycle Time en días: (doneAt - creación) promedio, excluyendo subtareas */
+function calcCycleTime(doneTasks) {
+  const valid = doneTasks.filter(t => !t.parentId && t.doneAt);
+  if (!valid.length) return null;
+  const total = valid.reduce((sum, t) => {
+    const created = new Date(t.id); // id = ms timestamp
+    created.setHours(0, 0, 0, 0); // normalizar a medianoche para contar días calendario
+    const doneDate = new Date(t.doneAt + 'T00:00:00');
+    return sum + Math.max(0, (doneDate - created) / 86400000);
+  }, 0);
+  return Math.round(total / valid.length * 10) / 10; // 1 decimal
+}
+
+/** Drawdown: cuenta de snoozedDates por semana ISO dentro del mes */
+function calcDrawdownByWeek(allTasks, viewYear, viewMonth) {
+  const weekCounts = {};
+  allTasks.forEach(t => {
+    if (!t.snoozedDates) return;
+    t.snoozedDates.forEach(dStr => {
+      const d = new Date(dStr + (dStr.includes('T') ? '' : 'T00:00:00'));
+      if (d.getFullYear() === viewYear && d.getMonth() === viewMonth) {
+        const wk = isoWeek(d);
+        weekCounts[wk] = (weekCounts[wk] || 0) + 1;
+      }
+    });
+  });
+  const sorted = Object.keys(weekCounts).sort();
+  return sorted.map(wk => ({ week: wk, count: weekCounts[wk] }));
+}
+
+/** Factor de impacto: % de tareas completadas que son Maker */
+function calcImpactFactor(doneTasks, makerCats) {
+  if (!makerCats || !makerCats.length) return null;
+  const total = doneTasks.length;
+  if (!total) return null;
+  const makerCount = doneTasks.filter(t => getTaskCats(t).some(c => makerCats.includes(c))).length;
+  return { maker: makerCount, manager: total - makerCount, pct: Math.round(makerCount / total * 100) };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function renderMonthSection() {
   const today = new Date();
   const viewYear  = today.getFullYear() + Math.floor((today.getMonth() + _statsMonthOffset) / 12);
   const viewMonth = ((today.getMonth() + _statsMonthOffset) % 12 + 12) % 12;
@@ -2532,6 +2818,15 @@ function renderMonthSection() {
   document.getElementById('stats-month-low').textContent = monthDone.filter(t => t.pri === 'low').length;
   const snoozedEl = document.getElementById('stats-month-snoozed');
   if (snoozedEl) snoozedEl.textContent = monthSnoozedCount;
+  const snoozedPctEl = document.getElementById('stats-month-snoozed-pct');
+  if (snoozedPctEl) {
+    if (monthDone.length > 0 && monthSnoozedCount > 0) {
+      const pct = Math.round((monthSnoozedCount / monthDone.length) * 100);
+      snoozedPctEl.textContent = pct + '% del total';
+    } else {
+      snoozedPctEl.textContent = '';
+    }
+  }
 
   document.getElementById('stats-month-label').textContent =
     `Completadas en ${new Date(viewYear, viewMonth, 1).toLocaleDateString('es-ES', { month: 'long' })}`;
@@ -2541,6 +2836,98 @@ function renderMonthSection() {
 
   drawChart(dailyCounts, lastDay);
   renderBreakdown(monthDone, 'month');
+
+  // ── Métricas de rendimiento ──
+  const makerCats = await dbGetMeta('makerCategories').catch(() => null) || [];
+  const globalDone = tasks.filter(t => t.done);
+  const globalCycle = calcCycleTime(globalDone);
+
+  // Win Rate
+  const wr = calcWinRate(tasks, viewYear, viewMonth);
+  const wrEl = document.getElementById('stats-winrate');
+  const wrBar = document.getElementById('stats-winrate-bar');
+  const wrSub = document.getElementById('stats-winrate-sub');
+  if (wrEl) {
+    if (wr !== null) {
+      wrEl.textContent = wr + '%';
+      if (wrBar) wrBar.style.width = wr + '%';
+      if (wrSub) {
+        const label = wr >= 90 ? 'ejecución excelente' : wr >= 70 ? 'ejecución sólida' : wr >= 50 ? 'ejecución regular' : 'margen de mejora';
+        wrSub.textContent = label;
+      }
+    } else {
+      wrEl.textContent = '—';
+      if (wrBar) wrBar.style.width = '0%';
+      if (wrSub) wrSub.textContent = 'Sin tareas planificadas este mes';
+    }
+  }
+
+  // Cycle Time mensual
+  const cycleMes = calcCycleTime(monthDone);
+  const ctMonthEl = document.getElementById('stats-cycletime-month');
+  const ctMonthSub = document.getElementById('stats-cycletime-month-sub');
+  if (ctMonthEl) {
+    ctMonthEl.textContent = cycleMes !== null ? cycleMes + ' d' : '—';
+    if (ctMonthSub) {
+      if (cycleMes !== null && globalCycle !== null) {
+        const diff = cycleMes - globalCycle;
+        const arrow = diff > 0 ? '↑' : '↓';
+        const sign = diff > 0 ? '+' : '';
+        ctMonthSub.textContent = `${arrow} ${sign}${Math.round(diff * 10) / 10} d vs. global (${globalCycle} d)`;
+      } else {
+        ctMonthSub.textContent = 'Sin datos este mes';
+      }
+    }
+  }
+
+  // Drawdown sparkline
+  const drawdownData = calcDrawdownByWeek(tasks, viewYear, viewMonth);
+  const sparkEl = document.getElementById('stats-drawdown-sparkline');
+  const drawdownWrap = document.getElementById('stats-drawdown-wrap');
+  if (sparkEl) {
+    if (drawdownData.length) {
+      const maxCount = Math.max(...drawdownData.map(d => d.count));
+      sparkEl.innerHTML = drawdownData.map(d => {
+        const hPct = maxCount > 0 ? Math.round(d.count / maxCount * 100) : 0;
+        const cleanWeek = d.week.replace(viewYear + '-W', 'Semana ');
+        return `<div class="spark-bar-wrap" title="${cleanWeek}: ${d.count} pospuestas">
+          <div class="spark-bar" style="height:${hPct}%"></div>
+          <div class="spark-bar-val">${d.count}</div>
+        </div>`;
+      }).join('');
+      const totalSnoozes = drawdownData.reduce((s, d) => s + d.count, 0);
+      const subEl = document.getElementById('stats-drawdown-sub');
+      if (subEl) subEl.textContent = `${totalSnoozes} pospuestas en ${drawdownData.length} semana${drawdownData.length > 1 ? 's' : ''}`;
+      if (drawdownWrap) drawdownWrap.classList.remove('hidden');
+    } else {
+      if (drawdownWrap) drawdownWrap.classList.add('hidden');
+    }
+  }
+
+  // Factor de Impacto mensual
+  const impMonth = calcImpactFactor(monthDone, makerCats);
+  const impRatioEl = document.getElementById('stats-impact-ratio');
+  const impBarEl = document.getElementById('stats-impact-bar');
+  const impSubEl = document.getElementById('stats-impact-sub');
+  const impCardEl = document.getElementById('stats-impact-card');
+  if (impCardEl) {
+    if (!makerCats.length) {
+      impCardEl.classList.add('stats-perf-card-muted');
+      if (impRatioEl) impRatioEl.textContent = '—';
+      if (impBarEl) impBarEl.style.width = '0%';
+      if (impSubEl) impSubEl.textContent = 'Configura las categorías Maker en Ajustes → Métricas';
+    } else if (impMonth) {
+      impCardEl.classList.remove('stats-perf-card-muted');
+      if (impRatioEl) impRatioEl.textContent = impMonth.pct + '%';
+      if (impBarEl) impBarEl.style.width = impMonth.pct + '%';
+      if (impSubEl) impSubEl.textContent = `${impMonth.maker} Maker · ${impMonth.manager} Manager · ${impMonth.pct}% trabajo profundo`;
+    } else {
+      impCardEl.classList.remove('stats-perf-card-muted');
+      if (impRatioEl) impRatioEl.textContent = '—';
+      if (impBarEl) impBarEl.style.width = '0%';
+      if (impSubEl) impSubEl.textContent = 'Sin tareas completadas este mes';
+    }
+  }
 }
 
 function renderBreakdown(done, prefix) {
@@ -2797,7 +3184,8 @@ if (btnMagicGen) {
   "desc": "String opcional, elaboraciones extraídas",
   "due": "String opcional formato YYYY-MM-DD",
   "time": "String opcional formato HH:MM (24h)",
-  "pri": "String opcional entre 'low', 'mid', 'high' (por defecto 'mid')"
+  "pri": "String opcional entre 'low', 'mid', 'high' (por defecto 'mid')",
+  "repeat": "String opcional. Si la tarea se repite en días específicos de la semana usa formato 'dw:N,N,...' donde N son números de día (0=Dom,1=Lun,2=Mar,3=Mié,4=Jue,5=Vie,6=Sáb). Ejemplos: 'dw:1,2,3,4,5' para lunes a viernes, 'dw:1,3,5' para lunes/miércoles/viernes, 'dw:6,0' para fin de semana. Para intervalo fijo usa 'N:unit' donde unit es h/d/w/m/y. Omite este campo si no hay recurrencia."
 }
 No incluyas texto fuera del JSON. Hoy es ${new Date().toISOString().slice(0,10)}`;
 
@@ -2818,6 +3206,21 @@ No incluyas texto fuera del JSON. Hoy es ${new Date().toISOString().slice(0,10)}
         if (data.due) document.getElementById('sel-due').value = data.due;
         if (data.time) document.getElementById('sel-time').value = data.time;
         if (data.pri) document.getElementById('sel-pri').value = data.pri;
+        if (data.repeat) {
+          const repStr = String(data.repeat);
+          if (repStr.startsWith('dw:')) {
+            document.getElementById('sel-repeat-unit').value = 'dw';
+            const activeDays = repStr.slice(3).split(',').map(s => s.trim());
+            document.querySelectorAll('#repeat-days-picker .day-btn').forEach(b => {
+              b.classList.toggle('active', activeDays.includes(b.dataset.day));
+            });
+          } else if (repStr.includes(':')) {
+            const parts = repStr.split(':');
+            document.getElementById('sel-repeat-n').value = parts[0];
+            document.getElementById('sel-repeat-unit').value = parts[1];
+          }
+          syncRepeatN();
+        }
         
         magicInputText.value = '';
         showToast('✨ Formulario rellenado con IA');

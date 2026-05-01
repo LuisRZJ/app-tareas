@@ -63,17 +63,27 @@ document.getElementById('form-mount').innerHTML = `
             <input type="time" id="sel-time" />
           </div>
           <div class="form-field form-field-repeat">
-            <label>Repetir cada</label>
+            <label>Repetir</label>
             <div class="repeat-inputs">
               <input type="number" id="sel-repeat-n" min="1" max="999" placeholder="—" />
               <select id="sel-repeat-unit">
                 <option value="">No repetir</option>
-                <option value="h">horas</option>
-                <option value="d">días</option>
-                <option value="w">semanas</option>
-                <option value="m">meses</option>
-                <option value="y">años</option>
+                <option value="h">cada N horas</option>
+                <option value="d">cada N días</option>
+                <option value="w">cada N semanas</option>
+                <option value="m">cada N meses</option>
+                <option value="y">cada N años</option>
+                <option value="dw">días de la semana</option>
               </select>
+            </div>
+            <div class="repeat-days-picker hidden" id="repeat-days-picker">
+              <button type="button" class="day-btn" data-day="1">L</button>
+              <button type="button" class="day-btn" data-day="2">M</button>
+              <button type="button" class="day-btn" data-day="3">X</button>
+              <button type="button" class="day-btn" data-day="4">J</button>
+              <button type="button" class="day-btn" data-day="5">V</button>
+              <button type="button" class="day-btn" data-day="6">S</button>
+              <button type="button" class="day-btn" data-day="0">D</button>
             </div>
           </div>
         </div>
