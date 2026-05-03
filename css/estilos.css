@@ -181,6 +181,14 @@ body::before {
 .ring-tip-row span:first-child { color: rgba(232,213,168,0.7); }
 .ring-tip-row span:last-child { color: var(--bg); font-weight: 500; }
 .ring-tip-row.overdue span:last-child { color: #ff6b6b; }
+.ring-tip-row-snoozed span:last-child { color: var(--gold); }
+.ring-tip-note {
+  margin-top: 2px;
+  max-width: 220px;
+  white-space: normal;
+  line-height: 1.35;
+  color: rgba(232,213,168,0.82);
+}
 .header-right {
   display: flex;
   align-items: flex-end;
@@ -742,7 +750,10 @@ select:focus, select:hover { border-color: var(--gold); color: var(--text); }
 }
 .repeat-inputs input[type="number"]::-webkit-inner-spin-button,
 .repeat-inputs input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
-.repeat-inputs select { flex: 1; }
+.repeat-inputs select {
+  flex: 1;
+  min-width: 0;
+}
 .repeat-inputs input[type="number"]:disabled {
   opacity: 0.35;
   cursor: not-allowed;
@@ -782,6 +793,40 @@ select:focus, select:hover { border-color: var(--gold); color: var(--text); }
 .day-btn:hover:not(.active) {
   border-color: var(--gold);
   color: var(--text);
+}
+
+/* ── Responsive: evitar overflow del campo Repetir en móvil ── */
+@media (max-width: 680px) {
+  .form-extra {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 12px;
+  }
+  .form-field {
+    min-width: 0;
+  }
+  .form-field.form-field-repeat {
+    grid-column: 1 / -1;
+  }
+  .repeat-inputs {
+    min-width: 0;
+  }
+  .repeat-inputs select {
+    width: 100%;
+  }
+  .repeat-days-picker {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+}
+
+@media (max-width: 420px) {
+  .form-extra {
+    grid-template-columns: 1fr;
+  }
+  .form-field.form-field-repeat {
+    grid-column: auto;
+  }
 }
 
 /* ── Due date & repeat badges ── */

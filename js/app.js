@@ -510,6 +510,11 @@ async function executeCompleteParent(action) {
   }
   markDirty();
   render();
+  if (detailStack.length) {
+    const topId = detailStack[detailStack.length - 1];
+    if (topId === t.id && t.done) closeTaskDetail();
+    else renderDetailBody(topId);
+  }
   showToast('🎉 ¡Tarea completada!', {
     undo: true,
     onUndo: async () => {
@@ -651,16 +656,28 @@ function render() {
   const list = document.getElementById('task-list');
   const visible = filteredTasks();
   const scoped  = scopedTasks();
+  const todayStr = todayISO();
 
   // ── Anillo de progreso: todas las tareas y subtareas de hoy, filtrado por categoría o proyecto ──
   const isCatFilter = filterMode in CATS;
   const isProjFilter = filterMode.startsWith('proj:');
   const todayAll = tasks.filter(t => {
-    if (t.due !== todayISO()) return false;
+    if (t.due !== todayStr) return false;
     if (isCatFilter) return getTaskCats(t).includes(filterMode);
     if (isProjFilter) return String(t.project) === filterMode.slice(5);
     return true;
   });
+  const snoozedTodayTasks = tasks.filter(t => {
+    if (!Array.isArray(t.snoozedDates) || !t.snoozedDates.includes(todayStr)) return false;
+    if (isCatFilter) return getTaskCats(t).includes(filterMode);
+    if (isProjFilter) return String(t.project) === filterMode.slice(5);
+    return true;
+  });
+  const snoozedPreview = snoozedTodayTasks
+    .slice(0, 3)
+    .map(t => (t.text || 'Sin título').trim())
+    .join(' · ');
+  const snoozedMore = snoozedTodayTasks.length > 3 ? ` +${snoozedTodayTasks.length - 3} más` : '';
   const tTotal   = todayAll.length;
   const tDone    = todayAll.filter(t => t.done).length;
   const tOverdue = todayAll.filter(t => isTaskOverdue(t)).length;
@@ -681,7 +698,11 @@ function render() {
       `<div class="ring-tip-row"><span>Total</span><span>${tTotal}</span></div>` +
       `<div class="ring-tip-row"><span>Pendientes</span><span>${tTotal - tDone}</span></div>` +
       `<div class="ring-tip-row"><span>Completadas</span><span>${tDone}</span></div>` +
-      `<div class="ring-tip-row ${tOverdue ? 'overdue' : ''}"><span>Vencidas</span><span>${tOverdue}</span></div>`;
+      `<div class="ring-tip-row ${tOverdue ? 'overdue' : ''}"><span>Vencidas</span><span>${tOverdue}</span></div>` +
+      `<div class="ring-tip-row ring-tip-row-snoozed"><span>Pospuestas hoy</span><span>${snoozedTodayTasks.length}</span></div>` +
+      (snoozedTodayTasks.length
+        ? `<div class="ring-tip-note">${snoozedPreview}${snoozedMore}</div>`
+        : '');
     const tPct = pct / 100;
     const ringColor = lerpColor(139,94,16, 26,92,26, tPct);
     ringFill.style.strokeDashoffset = circ - (circ * pct / 100);
@@ -1348,7 +1369,14 @@ function renderDetailBody(id) {
     editTask(id);
   });
   document.getElementById('detail-toggle-done').addEventListener('click', async () => {
+    const wasDone = !!t.done;
     await toggleDone(id);
+    const updated = tasks.find(tt => tt.id === id);
+    // Si se completó desde detalle, cerrar en un solo clic para evitar interacción doble.
+    if (!wasDone && updated && updated.done && detailStack[detailStack.length - 1] === id) {
+      closeTaskDetail();
+      return;
+    }
     if (detailStack.length) renderDetailBody(detailStack[detailStack.length - 1]);
   });
 
