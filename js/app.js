@@ -17,8 +17,22 @@ let currentDetailProjId = null;
 let dayProgressInterval = null;
 let targetTime = null;
 let searchQuery = '';
+let _searchIndexDirty = true;
+let _searchIndex = [];
+let _searchResultCache = new Map();
+let _searchDebounceTimer = null;
+let _searchRenderLimit = 250;
+let _taskTitleMapCache = null;
+const SEARCH_RENDER_STEP = 250;
+const SEARCH_DEBOUNCE_MS = 130;
+const SEARCH_CACHE_LIMIT = 15;
 
-function markDirty() { _dataDirty = true; }
+function markDirty() {
+  _dataDirty = true;
+  _searchIndexDirty = true;
+  _searchResultCache.clear();
+  _taskTitleMapCache = null;
+}
 
 async function getCloudHeaders(extra = {}) {
   if (!_backupSecret) _backupSecret = await dbGetMeta('backupSecret');
@@ -636,11 +650,16 @@ function getSubtaskBadge(t) {
   return `<span class="subtask-badge">☐ ${done}/${subs.length}</span>`;
 }
 
+function getTaskTitleMap() {
+  if (_taskTitleMapCache && _taskTitleMapCache.size === tasks.length) return _taskTitleMapCache;
+  _taskTitleMapCache = new Map(tasks.map(t => [t.id, String(t.text || '').trim()]));
+  return _taskTitleMapCache;
+}
+
 function getSubtaskParentBadge(t) {
   if (!t.parentId) return '';
-  const parent = tasks.find(p => p.id === t.parentId);
-  if (!parent) return '';
-  const name = String(parent.text || '').trim();
+  const name = getTaskTitleMap().get(t.parentId) || '';
+  if (!name) return '';
   const short = name.length > 28 ? name.slice(0, 28) + '…' : name;
   return `<span class="subtask-parent-badge">↳ ${escHtml(short || 'Tarea padre')}</span>`;
 }
@@ -652,52 +671,75 @@ function normalizeSearchText(value) {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-function getTaskSearchScore(t, q) {
-  const text = normalizeSearchText(t.text);
-  const desc = normalizeSearchText(t.desc);
-  const project = normalizeSearchText(t.project ? (getProjectById(Number(t.project))?.name || '') : '');
-  const categories = normalizeSearchText(getTaskCats(t).map(key => (CATS[key]?.label || key)).join(' '));
-  const parentTitle = normalizeSearchText(t.parentId ? (tasks.find(p => p.id === t.parentId)?.text || '') : '');
-
+function getSearchScore(entry, q) {
   let score = 0;
-  if (text.startsWith(q)) score += 9;
-  if (text.includes(q)) score += 6;
-  if (desc.includes(q)) score += 4;
-  if (project.includes(q)) score += 3;
-  if (categories.includes(q)) score += 3;
-  if (parentTitle.includes(q)) score += 2;
-  if (!t.done) score += 1;
+  if (entry.text.startsWith(q)) score += 9;
+  if (entry.text.includes(q)) score += 6;
+  if (entry.desc.includes(q)) score += 4;
+  if (entry.project.includes(q)) score += 3;
+  if (entry.categories.includes(q)) score += 3;
+  if (entry.parentTitle.includes(q)) score += 2;
+  if (!entry.done) score += 1;
   return score;
 }
 
-function matchesTaskSearch(t, q) {
-  if (!q) return true;
-  const project = t.project ? (getProjectById(Number(t.project))?.name || '') : '';
-  const categories = getTaskCats(t).map(key => (CATS[key]?.label || key)).join(' ');
-  const parentTitle = t.parentId ? (tasks.find(p => p.id === t.parentId)?.text || '') : '';
-  const searchBlob = normalizeSearchText([
-    t.text || '',
-    t.desc || '',
-    project,
-    categories,
-    parentTitle
-  ].join(' '));
-  return searchBlob.includes(q);
+function rebuildSearchIndexIfNeeded() {
+  if (!_searchIndexDirty && _searchIndex.length === tasks.length) return;
+
+  const titles = getTaskTitleMap();
+  const projById = new Map(PROJECTS.map(p => [String(p.id), normalizeSearchText(p.name || '')]));
+
+  _searchIndex = tasks.map(t => {
+    const text = normalizeSearchText(t.text);
+    const desc = normalizeSearchText(t.desc);
+    const project = t.project ? (projById.get(String(t.project)) || '') : '';
+    const categories = normalizeSearchText(getTaskCats(t).map(key => (CATS[key]?.label || key)).join(' '));
+    const parentTitle = t.parentId ? normalizeSearchText(titles.get(t.parentId) || '') : '';
+    const blob = [text, desc, project, categories, parentTitle].join(' ');
+    return {
+      task: t,
+      id: t.id,
+      done: !!t.done,
+      text,
+      desc,
+      project,
+      categories,
+      parentTitle,
+      blob
+    };
+  });
+
+  _searchIndexDirty = false;
+  _searchResultCache.clear();
 }
 
 function searchTasksGlobal(query) {
   const q = normalizeSearchText(query).trim();
   if (!q) return [];
 
-  return tasks
-    .filter(t => matchesTaskSearch(t, q))
-    .map(t => ({ t, score: getTaskSearchScore(t, q) }))
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      if (a.t.done !== b.t.done) return a.t.done ? 1 : -1;
-      return b.t.id - a.t.id;
-    })
-    .map(x => x.t);
+  rebuildSearchIndexIfNeeded();
+
+  if (_searchResultCache.has(q)) return _searchResultCache.get(q);
+
+  const ranked = [];
+  for (const entry of _searchIndex) {
+    if (!entry.blob.includes(q)) continue;
+    ranked.push({ entry, score: getSearchScore(entry, q) });
+  }
+
+  ranked.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (a.entry.done !== b.entry.done) return a.entry.done ? 1 : -1;
+    return b.entry.id - a.entry.id;
+  });
+
+  const result = ranked.map(x => x.entry.task);
+  _searchResultCache.set(q, result);
+  if (_searchResultCache.size > SEARCH_CACHE_LIMIT) {
+    const oldest = _searchResultCache.keys().next().value;
+    if (oldest) _searchResultCache.delete(oldest);
+  }
+  return result;
 }
 
 function priorityTasks() {
@@ -760,8 +802,10 @@ function sortTasks(arr) {
 function render() {
   const list = document.getElementById('task-list');
   const searchActive = !!searchQuery.trim();
-  const visible = searchActive ? searchTasksGlobal(searchQuery) : filteredTasks();
-  const scoped  = searchActive ? visible : scopedTasks();
+  const searchResults = searchActive ? searchTasksGlobal(searchQuery) : [];
+  const visible = searchActive ? searchResults.slice(0, _searchRenderLimit) : filteredTasks();
+  const scoped  = searchActive ? searchResults : scopedTasks();
+  const searchTotal = searchActive ? searchResults.length : 0;
   const todayStr = todayISO();
 
   // ── Anillo de progreso: todas las tareas y subtareas de hoy, filtrado por categoría o proyecto ──
@@ -839,7 +883,7 @@ function render() {
     salud:    `salud${scopeSuffix}`,
   };
   document.getElementById('list-label').textContent = searchActive
-    ? `— búsqueda global · ${visible.length}`
+    ? `— búsqueda global · ${searchTotal}`
     : ('— ' + (labelMap[filterMode] || 'tareas'));
 
   if (!visible.length) {
@@ -896,6 +940,26 @@ function render() {
     }).join('');
   } else {
     list.innerHTML = visible.map(t => renderTaskItem(t)).join('');
+    if (searchActive) {
+      const shown = visible.length;
+      const remain = Math.max(0, searchTotal - shown);
+      const shownText = shown.toLocaleString('es-ES');
+      const totalText = searchTotal.toLocaleString('es-ES');
+      const nextChunk = Math.min(SEARCH_RENDER_STEP, remain);
+      list.innerHTML += `<div class="search-load-more-wrap">
+        <div class="search-results-counter">Mostrando ${shownText} de ${totalText} resultados</div>
+        ${remain > 0 ? `<button class="search-load-more-btn" id="search-load-more" type="button">Cargar ${nextChunk} más · ${remain} restantes</button>` : ''}
+      </div>`;
+      if (remain > 0) {
+        const loadMoreBtn = document.getElementById('search-load-more');
+        if (loadMoreBtn) {
+          loadMoreBtn.addEventListener('click', () => {
+            _searchRenderLimit += SEARCH_RENDER_STEP;
+            render();
+          });
+        }
+      }
+    }
   }
   // Refresh project detail if open
   if (currentDetailProjId) renderProjectDetailTasks();
@@ -1124,6 +1188,21 @@ function initPrioritySwipe() {
   appEl.addEventListener('pointercancel', reset);
 }
 
+function triggerSearchRender(immediate = false) {
+  if (_searchDebounceTimer) {
+    clearTimeout(_searchDebounceTimer);
+    _searchDebounceTimer = null;
+  }
+  if (immediate) {
+    render();
+    return;
+  }
+  _searchDebounceTimer = setTimeout(() => {
+    _searchDebounceTimer = null;
+    render();
+  }, SEARCH_DEBOUNCE_MS);
+}
+
 // ── Inicialización async ──
 (async function init() {
   await dbInit();
@@ -1207,15 +1286,17 @@ function initPrioritySwipe() {
   if (searchInput) {
     searchInput.addEventListener('input', () => {
       searchQuery = searchInput.value.trim();
+      _searchRenderLimit = SEARCH_RENDER_STEP;
       syncSearchUi();
-      render();
+      triggerSearchRender();
     });
     searchInput.addEventListener('keydown', e => {
       if (e.key === 'Escape' && searchQuery) {
         searchQuery = '';
         searchInput.value = '';
+        _searchRenderLimit = SEARCH_RENDER_STEP;
         syncSearchUi();
-        render();
+        triggerSearchRender(true);
       }
     });
   }
@@ -1223,8 +1304,9 @@ function initPrioritySwipe() {
     searchClear.addEventListener('click', () => {
       searchQuery = '';
       if (searchInput) searchInput.value = '';
+      _searchRenderLimit = SEARCH_RENDER_STEP;
       syncSearchUi();
-      render();
+      triggerSearchRender(true);
       searchInput?.focus();
     });
   }
