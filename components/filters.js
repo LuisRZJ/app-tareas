@@ -5,6 +5,10 @@ document.getElementById('filters-mount').innerHTML = `
     <button class="pri-tab" data-pri="low">🟢 Baja</button>
     <button class="pri-tab" data-pri="all">Todas</button>
   </div>
+  <div class="task-search-wrap">
+    <input type="search" id="task-search-input" class="task-search-input" placeholder="Buscar tareas, subtareas, proyectos o categorías..." autocomplete="off" />
+    <button type="button" id="task-search-clear" class="task-search-clear" title="Limpiar búsqueda">✕</button>
+  </div>
   <div class="scope-wrapper">
     <button class="scope-toggle" id="scope-toggle" aria-expanded="false">
       <span class="scope-toggle-icon">◈</span>

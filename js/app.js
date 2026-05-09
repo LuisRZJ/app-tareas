@@ -16,6 +16,7 @@ let subtaskCompleteOverlay = null;
 let currentDetailProjId = null;
 let dayProgressInterval = null;
 let targetTime = null;
+let searchQuery = '';
 
 function markDirty() { _dataDirty = true; }
 
@@ -188,14 +189,38 @@ function todayISO() {
     String(d.getMonth() + 1).padStart(2, '0') + '-' +
     String(d.getDate()).padStart(2, '0');
 }
+
+function parseISODateLocal(dateStr) {
+  const [y, m, d] = String(dateStr || '').split('-').map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+  return new Date(y, m - 1, d, 0, 0, 0, 0);
+}
+
+function formatISODateLocal(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '';
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+function parseTimeHHMM(timeStr) {
+  if (!timeStr || !String(timeStr).includes(':')) return { h: 0, m: 0 };
+  const [hh, mm] = String(timeStr).split(':').map(Number);
+  const h = Number.isFinite(hh) ? Math.min(23, Math.max(0, hh)) : 0;
+  const m = Number.isFinite(mm) ? Math.min(59, Math.max(0, mm)) : 0;
+  return { h, m };
+}
+
 function addDays(dateStr, days) {
-  const d = new Date(dateStr + 'T12:00:00');
+  const d = parseISODateLocal(dateStr);
+  if (!d) return dateStr;
   d.setDate(d.getDate() + Number(days));
-  return d.toISOString().slice(0, 10);
+  return formatISODateLocal(d);
 }
 function formatDateNice(dateStr) {
   if (!dateStr) return '';
-  const d = new Date(dateStr + 'T12:00:00');
+  const d = parseISODateLocal(dateStr);
+  if (!d) return dateStr;
   return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 function formatDueLabel(dateStr) {
@@ -208,7 +233,8 @@ function formatDueLabel(dateStr) {
   const monday = addDays(today, mondayOffset);
   const sunday = addDays(monday, 6);
   if (dateStr >= monday && dateStr <= sunday) {
-    const d = new Date(dateStr + 'T12:00:00');
+    const d = parseISODateLocal(dateStr);
+    if (!d) return formatDateNice(dateStr);
     const name = d.toLocaleDateString('es-ES', { weekday: 'long' });
     return name.charAt(0).toUpperCase() + name.slice(1);
   }
@@ -216,7 +242,7 @@ function formatDueLabel(dateStr) {
 }
 function formatCreatedTime(t) {
   const d = new Date(t.id);
-  const createdDate = d.toISOString().slice(0, 10);
+  const createdDate = formatISODateLocal(d);
   const time = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   if (createdDate === todayISO()) return 'Creada hoy a las ' + time;
   const date = d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -243,15 +269,20 @@ function addRepeat(dateStr, timeStr, repeatVal) {
 
   // ── Días de la semana ──
   if (repStr.startsWith('dw:')) {
-    const allowedDays = repStr.slice(3).split(',').map(Number).filter(x => !isNaN(x) && x >= 0 && x <= 6);
+    const allowedDays = [...new Set(repStr
+      .slice(3)
+      .split(',')
+      .map(Number)
+      .filter(x => !isNaN(x) && x >= 0 && x <= 6))];
     if (!allowedDays.length) return { due: dateStr, dueTime: timeStr };
-    const d = new Date(dateStr + 'T12:00:00');
+    const d = parseISODateLocal(dateStr);
+    if (!d) return { due: dateStr, dueTime: timeStr };
     d.setDate(d.getDate() + 1); // avanzar al menos un día
     for (let i = 0; i < 7; i++) {
       if (allowedDays.includes(d.getDay())) break;
       d.setDate(d.getDate() + 1);
     }
-    return { due: d.toISOString().slice(0, 10), dueTime: timeStr || '' };
+    return { due: formatISODateLocal(d), dueTime: timeStr || '' };
   }
 
   let n, unit;
@@ -261,21 +292,33 @@ function addRepeat(dateStr, timeStr, repeatVal) {
   } else {
     n = Number(repStr); unit = 'd';
   }
+  if (!Number.isFinite(n) || n <= 0) return { due: dateStr, dueTime: timeStr };
   if (unit === 'h') {
-    const [h, m] = (timeStr || '00:00').split(':').map(Number);
-    const dt = new Date(dateStr + 'T' + String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':00');
+    const baseDate = parseISODateLocal(dateStr);
+    if (!baseDate) return { due: dateStr, dueTime: timeStr };
+    const { h, m } = parseTimeHHMM(timeStr || '00:00');
+    const dt = new Date(
+      baseDate.getFullYear(),
+      baseDate.getMonth(),
+      baseDate.getDate(),
+      h,
+      m,
+      0,
+      0
+    );
     dt.setHours(dt.getHours() + n);
     return {
-      due: dt.toISOString().slice(0,10),
+      due: formatISODateLocal(dt),
       dueTime: String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0')
     };
   }
-  const d = new Date(dateStr + 'T12:00:00');
+  const d = parseISODateLocal(dateStr);
+  if (!d) return { due: dateStr, dueTime: timeStr };
   if (unit === 'd') d.setDate(d.getDate() + n);
   else if (unit === 'w') d.setDate(d.getDate() + n * 7);
   else if (unit === 'm') d.setMonth(d.getMonth() + n);
   else if (unit === 'y') d.setFullYear(d.getFullYear() + n);
-  return { due: d.toISOString().slice(0,10), dueTime: timeStr || '' };
+  return { due: formatISODateLocal(d), dueTime: timeStr || '' };
 }
 function formatRepeat(repeatVal) {
   if (!repeatVal) return '';
@@ -324,7 +367,7 @@ async function loadTasks() {
   const toMigrate = tasks.filter(t => t.done && !t.doneAt);
   if (toMigrate.length) {
     for (const t of toMigrate) {
-      t.doneAt = t.due || new Date(t.id).toISOString().slice(0, 10);
+      t.doneAt = t.due || formatISODateLocal(new Date(t.id));
       await dbPut(t);
     }
   }
@@ -510,10 +553,8 @@ async function executeCompleteParent(action) {
   }
   markDirty();
   render();
-  if (detailStack.length) {
-    const topId = detailStack[detailStack.length - 1];
-    if (topId === t.id && t.done) closeTaskDetail();
-    else renderDetailBody(topId);
+  if (!handleDetailAfterCompletion(t.id) && detailStack.length) {
+    renderDetailBody(detailStack[detailStack.length - 1]);
   }
   showToast('🎉 ¡Tarea completada!', {
     undo: true,
@@ -595,6 +636,70 @@ function getSubtaskBadge(t) {
   return `<span class="subtask-badge">☐ ${done}/${subs.length}</span>`;
 }
 
+function getSubtaskParentBadge(t) {
+  if (!t.parentId) return '';
+  const parent = tasks.find(p => p.id === t.parentId);
+  if (!parent) return '';
+  const name = String(parent.text || '').trim();
+  const short = name.length > 28 ? name.slice(0, 28) + '…' : name;
+  return `<span class="subtask-parent-badge">↳ ${escHtml(short || 'Tarea padre')}</span>`;
+}
+
+function normalizeSearchText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function getTaskSearchScore(t, q) {
+  const text = normalizeSearchText(t.text);
+  const desc = normalizeSearchText(t.desc);
+  const project = normalizeSearchText(t.project ? (getProjectById(Number(t.project))?.name || '') : '');
+  const categories = normalizeSearchText(getTaskCats(t).map(key => (CATS[key]?.label || key)).join(' '));
+  const parentTitle = normalizeSearchText(t.parentId ? (tasks.find(p => p.id === t.parentId)?.text || '') : '');
+
+  let score = 0;
+  if (text.startsWith(q)) score += 9;
+  if (text.includes(q)) score += 6;
+  if (desc.includes(q)) score += 4;
+  if (project.includes(q)) score += 3;
+  if (categories.includes(q)) score += 3;
+  if (parentTitle.includes(q)) score += 2;
+  if (!t.done) score += 1;
+  return score;
+}
+
+function matchesTaskSearch(t, q) {
+  if (!q) return true;
+  const project = t.project ? (getProjectById(Number(t.project))?.name || '') : '';
+  const categories = getTaskCats(t).map(key => (CATS[key]?.label || key)).join(' ');
+  const parentTitle = t.parentId ? (tasks.find(p => p.id === t.parentId)?.text || '') : '';
+  const searchBlob = normalizeSearchText([
+    t.text || '',
+    t.desc || '',
+    project,
+    categories,
+    parentTitle
+  ].join(' '));
+  return searchBlob.includes(q);
+}
+
+function searchTasksGlobal(query) {
+  const q = normalizeSearchText(query).trim();
+  if (!q) return [];
+
+  return tasks
+    .filter(t => matchesTaskSearch(t, q))
+    .map(t => ({ t, score: getTaskSearchScore(t, q) }))
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (a.t.done !== b.t.done) return a.t.done ? 1 : -1;
+      return b.t.id - a.t.id;
+    })
+    .map(x => x.t);
+}
+
 function priorityTasks() {
   if (priFilter === 'all') return tasks.filter(t => !t.parentId);
   return tasks.filter(t => !t.parentId && t.pri === priFilter);
@@ -654,8 +759,9 @@ function sortTasks(arr) {
 
 function render() {
   const list = document.getElementById('task-list');
-  const visible = filteredTasks();
-  const scoped  = scopedTasks();
+  const searchActive = !!searchQuery.trim();
+  const visible = searchActive ? searchTasksGlobal(searchQuery) : filteredTasks();
+  const scoped  = searchActive ? visible : scopedTasks();
   const todayStr = todayISO();
 
   // ── Anillo de progreso: todas las tareas y subtareas de hoy, filtrado por categoría o proyecto ──
@@ -732,18 +838,26 @@ function render() {
     trabajo:  `trabajo${scopeSuffix}`,
     salud:    `salud${scopeSuffix}`,
   };
-  document.getElementById('list-label').textContent = '— ' + (labelMap[filterMode] || 'tareas');
+  document.getElementById('list-label').textContent = searchActive
+    ? `— búsqueda global · ${visible.length}`
+    : ('— ' + (labelMap[filterMode] || 'tareas'));
 
   if (!visible.length) {
-    list.innerHTML = `<div class="empty">
-      <div class="empty-icon">✦</div>
-      <h3>Sin tareas aquí</h3>
-      <p>Agrega una nueva tarea o cambia el filtro</p>
-    </div>`;
+    list.innerHTML = searchActive
+      ? `<div class="empty">
+          <div class="empty-icon">⌕</div>
+          <h3>Sin coincidencias</h3>
+          <p>No encontré tareas para "${escHtml(searchQuery)}"</p>
+        </div>`
+      : `<div class="empty">
+          <div class="empty-icon">✦</div>
+          <h3>Sin tareas aquí</h3>
+          <p>Agrega una nueva tarea o cambia el filtro</p>
+        </div>`;
     return;
   }
 
-  if (['all', 'week', 'month'].includes(dateScope)) {
+  if (!searchActive && ['all', 'week', 'month'].includes(dateScope)) {
     // Agrupar por fecha de vencimiento
     const groups = new Map();
     for (const t of visible) {
@@ -811,6 +925,7 @@ function renderTaskItem(t) {
       <div class="task-meta">
         ${catTag}
         ${getProjectBadge(t)}
+        ${getSubtaskParentBadge(t)}
         ${getPriLabel(t.pri)}
         ${getDueBadge(t)}
         ${getRepeatBadge(t)}
@@ -888,6 +1003,127 @@ function scheduleMinuteTick() {
   }, msToNextMinute);
 }
 
+const PRIORITY_ORDER = ['high', 'mid', 'low', 'all'];
+
+function setPriorityFilter(nextPri, swipeDelta = 0) {
+  if (!PRIORITY_ORDER.includes(nextPri)) return;
+  if (priFilter === nextPri) return;
+  priFilter = nextPri;
+
+  document.querySelectorAll('.pri-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.pri === nextPri);
+  });
+
+  const priTabs = document.querySelector('.pri-tabs');
+  if (priTabs && swipeDelta) {
+    priTabs.classList.remove('pri-swipe-left', 'pri-swipe-right');
+    // Reinicia la animación si el usuario hace swipes seguidos.
+    void priTabs.offsetWidth;
+    priTabs.classList.add(swipeDelta < 0 ? 'pri-swipe-left' : 'pri-swipe-right');
+    setTimeout(() => priTabs.classList.remove('pri-swipe-left', 'pri-swipe-right'), 260);
+  }
+
+  render();
+}
+
+function cyclePriorityBySwipe(swipeDelta) {
+  const step = swipeDelta < 0 ? 1 : -1;
+  const idx = PRIORITY_ORDER.indexOf(priFilter);
+  const nextIdx = (idx + step + PRIORITY_ORDER.length) % PRIORITY_ORDER.length;
+  setPriorityFilter(PRIORITY_ORDER[nextIdx], swipeDelta);
+}
+
+function isOverlayBlockingPrioritySwipe() {
+  return !!document.querySelector([
+    '.detail-overlay.open',
+    '.form-overlay.open',
+    '.settings-overlay.open',
+    '.projects-overlay.open',
+    '.stats-overlay.open',
+    '.day-progress-overlay.open',
+    '.snooze-detail-overlay.open'
+  ].join(','));
+}
+
+function isInteractivePrioritySwipeTarget(target) {
+  if (!target || !(target instanceof Element)) return true;
+  return !!target.closest([
+    'button',
+    'input',
+    'textarea',
+    'select',
+    'a',
+    '[role="button"]',
+    '.task-item',
+    '.task-actions',
+    '.task-check',
+    '.task-body',
+    '.filters-wrapper',
+    '.scope-wrapper',
+    '.pri-tabs',
+    '.nav-fab-wrap',
+    '.cat-multi-wrap',
+    '.ring-wrap'
+  ].join(','));
+}
+
+function initPrioritySwipe() {
+  const appEl = document.querySelector('.app');
+  if (!appEl) return;
+
+  let tracking = false;
+  let pointerId = null;
+  let startX = 0;
+  let startY = 0;
+  let horizontalLocked = false;
+
+  const reset = () => {
+    if (pointerId !== null && appEl.hasPointerCapture && appEl.hasPointerCapture(pointerId)) {
+      appEl.releasePointerCapture(pointerId);
+    }
+    tracking = false;
+    pointerId = null;
+    horizontalLocked = false;
+  };
+
+  appEl.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+    if (isOverlayBlockingPrioritySwipe()) return;
+    if (isInteractivePrioritySwipeTarget(e.target)) return;
+    tracking = true;
+    pointerId = e.pointerId;
+    startX = e.clientX;
+    startY = e.clientY;
+    horizontalLocked = false;
+  });
+
+  appEl.addEventListener('pointermove', e => {
+    if (!tracking || e.pointerId !== pointerId) return;
+
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    if (!horizontalLocked) {
+      if (Math.abs(dx) < 14 && Math.abs(dy) < 14) return;
+      if (Math.abs(dx) <= Math.abs(dy) * 1.15) {
+        reset();
+        return;
+      }
+      horizontalLocked = true;
+      appEl.setPointerCapture?.(pointerId);
+    }
+
+    if (e.cancelable) e.preventDefault();
+    if (Math.abs(dx) >= 70) {
+      cyclePriorityBySwipe(dx);
+      reset();
+    }
+  }, { passive: false });
+
+  appEl.addEventListener('pointerup', reset);
+  appEl.addEventListener('pointercancel', reset);
+}
+
 // ── Inicialización async ──
 (async function init() {
   await dbInit();
@@ -956,12 +1192,42 @@ function scheduleMinuteTick() {
   // Filtro 1: Prioridad (pestañas)
   document.querySelectorAll('.pri-tab').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.pri-tab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      priFilter = btn.dataset.pri;
-      render();
+      setPriorityFilter(btn.dataset.pri);
     });
   });
+  initPrioritySwipe();
+
+  // Búsqueda global de tareas
+  const searchInput = document.getElementById('task-search-input');
+  const searchClear = document.getElementById('task-search-clear');
+  const syncSearchUi = () => {
+    if (!searchClear) return;
+    searchClear.classList.toggle('visible', !!searchQuery);
+  };
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      searchQuery = searchInput.value.trim();
+      syncSearchUi();
+      render();
+    });
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && searchQuery) {
+        searchQuery = '';
+        searchInput.value = '';
+        syncSearchUi();
+        render();
+      }
+    });
+  }
+  if (searchClear) {
+    searchClear.addEventListener('click', () => {
+      searchQuery = '';
+      if (searchInput) searchInput.value = '';
+      syncSearchUi();
+      render();
+      searchInput?.focus();
+    });
+  }
 
   // Filtro 2: Fecha (scope)
   document.querySelectorAll('.scope-btn').forEach(btn => {
@@ -1249,6 +1515,32 @@ function updateDetailBackBtn() {
   detailBack.style.visibility = detailStack.length > 1 ? 'visible' : 'hidden';
 }
 
+function handleDetailAfterCompletion(taskId) {
+  if (!detailStack.length) return false;
+  const topId = detailStack[detailStack.length - 1];
+  if (topId !== taskId) return false;
+
+  const completed = tasks.find(t => t.id === taskId);
+  if (!completed || !completed.done) return false;
+
+  // Si es subtarea, volver al modal del padre en lugar de cerrar todo.
+  if (completed.parentId) {
+    const parentId = completed.parentId;
+    const parentExists = tasks.some(t => t.id === parentId);
+    if (parentExists) {
+      const parentIdx = detailStack.lastIndexOf(parentId);
+      detailStack = parentIdx >= 0 ? detailStack.slice(0, parentIdx + 1) : [parentId];
+      subtaskFilter = 'pending';
+      renderDetailBody(parentId);
+      updateDetailBackBtn();
+      return true;
+    }
+  }
+
+  closeTaskDetail();
+  return true;
+}
+
 function initDetailDrag() {
   if (!detailPanel || !detailHandle) return;
   let startY = 0, deltaY = 0, dragging = false;
@@ -1275,6 +1567,7 @@ function initDetailDrag() {
 
   detailHandle.addEventListener('pointerdown', e => {
     if (!detailOverlay.classList.contains('open') || e.button !== 0) return;
+    if (e.cancelable) e.preventDefault();
     detailHandle.setPointerCapture(e.pointerId);
     startY = e.clientY;
     deltaY = 0;
@@ -1293,6 +1586,14 @@ function initDetailDrag() {
 
   detailHandle.addEventListener('pointerup', finishDrag);
   detailHandle.addEventListener('pointercancel', finishDrag);
+
+  // Fallback táctil: evita pull-to-refresh cuando se usa el handle como cortina.
+  detailHandle.addEventListener('touchstart', e => {
+    if (e.cancelable) e.preventDefault();
+  }, { passive: false });
+  detailHandle.addEventListener('touchmove', e => {
+    if (e.cancelable) e.preventDefault();
+  }, { passive: false });
 }
 
 initDetailDrag();
@@ -1371,10 +1672,7 @@ function renderDetailBody(id) {
   document.getElementById('detail-toggle-done').addEventListener('click', async () => {
     const wasDone = !!t.done;
     await toggleDone(id);
-    const updated = tasks.find(tt => tt.id === id);
-    // Si se completó desde detalle, cerrar en un solo clic para evitar interacción doble.
-    if (!wasDone && updated && updated.done && detailStack[detailStack.length - 1] === id) {
-      closeTaskDetail();
+    if (!wasDone && handleDetailAfterCompletion(id)) {
       return;
     }
     if (detailStack.length) renderDetailBody(detailStack[detailStack.length - 1]);
