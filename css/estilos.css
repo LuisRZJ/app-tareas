@@ -1042,7 +1042,7 @@ select:focus, select:hover { border-color: var(--gold); color: var(--text); }
 }
 
 .task-check {
-  width: 18px; height: 18px;
+  width: 20px; height: 20px;
   border-radius: 50%;
   border: 2.5px solid var(--pri-color, var(--border2));
   cursor: pointer;
@@ -1059,7 +1059,7 @@ select:focus, select:hover { border-color: var(--gold); color: var(--text); }
 }
 .task-check.checked::after {
   content: '';
-  width: 5px; height: 3px;
+  width: 6px; height: 4px;
   border-left: 2px solid var(--bg);
   border-bottom: 2px solid var(--bg);
   transform: rotate(-45deg) translateY(-1px);

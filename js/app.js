@@ -231,6 +231,39 @@ function addDays(dateStr, days) {
   d.setDate(d.getDate() + Number(days));
   return formatISODateLocal(d);
 }
+function parseRepeatWeekdays(repeatVal) {
+  const repStr = String(repeatVal || '');
+  if (!repStr.startsWith('dw:')) return null;
+  const days = [...new Set(repStr
+    .slice(3)
+    .split(',')
+    .map(Number)
+    .filter(x => !isNaN(x) && x >= 0 && x <= 6))];
+  return days;
+}
+function isDateAllowedByWeeklyRepeat(dateStr, repeatVal) {
+  const allowedDays = parseRepeatWeekdays(repeatVal);
+  if (!allowedDays || !allowedDays.length) return true;
+  const d = parseISODateLocal(dateStr);
+  if (!d) return true;
+  return allowedDays.includes(d.getDay());
+}
+function alignDateToWeeklyRepeat(dateStr, repeatVal) {
+  const allowedDays = parseRepeatWeekdays(repeatVal);
+  if (!allowedDays || !allowedDays.length) return dateStr;
+  const d = parseISODateLocal(dateStr);
+  if (!d) return dateStr;
+  if (allowedDays.includes(d.getDay())) return dateStr;
+  for (let i = 0; i < 7; i++) {
+    d.setDate(d.getDate() + 1);
+    if (allowedDays.includes(d.getDay())) return formatISODateLocal(d);
+  }
+  return dateStr;
+}
+function isTaskScheduledForDate(task, dateStr) {
+  if (!task || task.due !== dateStr) return false;
+  return isDateAllowedByWeeklyRepeat(dateStr, task.repeat);
+}
 function formatDateNice(dateStr) {
   if (!dateStr) return '';
   const d = parseISODateLocal(dateStr);
@@ -283,11 +316,7 @@ function addRepeat(dateStr, timeStr, repeatVal) {
 
   // ── Días de la semana ──
   if (repStr.startsWith('dw:')) {
-    const allowedDays = [...new Set(repStr
-      .slice(3)
-      .split(',')
-      .map(Number)
-      .filter(x => !isNaN(x) && x >= 0 && x <= 6))];
+    const allowedDays = parseRepeatWeekdays(repStr);
     if (!allowedDays.length) return { due: dateStr, dueTime: timeStr };
     const d = parseISODateLocal(dateStr);
     if (!d) return { due: dateStr, dueTime: timeStr };
@@ -397,7 +426,7 @@ async function addTask() {
   const pri = document.getElementById('sel-pri').value;
   const project = getProjSelectValue();
   const desc    = descInput ? descInput.value.trim() : '';
-  const due     = document.getElementById('sel-due').value || '';
+  let due       = document.getElementById('sel-due').value || '';
   const dueTime = due ? (document.getElementById('sel-time').value || '') : '';
   const repeatN    = document.getElementById('sel-repeat-n').value.trim();
   const repeatUnit  = document.getElementById('sel-repeat-unit').value;
@@ -410,6 +439,9 @@ async function addTask() {
     } else if (repeatN) {
       repeat = repeatN + ':' + repeatUnit;
     }
+  }
+  if (due && repeat.startsWith('dw:')) {
+    due = alignDateToWeeklyRepeat(due, repeat);
   }
 
   if (editingId !== null) {
@@ -749,7 +781,10 @@ function priorityTasks() {
 
 function scopedTasks() {
   const src = priorityTasks();
-  if (dateScope === 'today')    return src.filter(t => t.due === todayISO());
+  if (dateScope === 'today') {
+    const todayStr = todayISO();
+    return src.filter(t => isTaskScheduledForDate(t, todayStr));
+  }
   if (dateScope === 'tomorrow') return src.filter(t => t.due === addDays(todayISO(), 1));
   if (dateScope === 'dayafter') return src.filter(t => t.due === addDays(todayISO(), 2));
   if (dateScope === 'week') {
@@ -812,7 +847,7 @@ function render() {
   const isCatFilter = filterMode in CATS;
   const isProjFilter = filterMode.startsWith('proj:');
   const todayAll = tasks.filter(t => {
-    if (t.due !== todayStr) return false;
+    if (!isTaskScheduledForDate(t, todayStr)) return false;
     if (isCatFilter) return getTaskCats(t).includes(filterMode);
     if (isProjFilter) return String(t.project) === filterMode.slice(5);
     return true;
